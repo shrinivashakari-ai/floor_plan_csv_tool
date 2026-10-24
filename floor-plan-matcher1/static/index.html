@@ -1,0 +1,2155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Floor Plan Area Matcher</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #eef3ef;
+      --panel: #ffffff;
+      --ink: #12261c;
+      --muted: #5d7268;
+      --line: #d5e3da;
+      --green: #1b7f49;
+      --green-dark: #125c35;
+      --green-soft: #e8f6ee;
+      --red: #b42318;
+      --amber: #b54708;
+      --header: #0f2a1d;
+      --shadow: 0 12px 32px rgba(15, 42, 29, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "IBM Plex Sans", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 88% -10%, #d9f0e2, transparent 36%),
+        var(--bg);
+    }
+    header.topbar {
+      background: var(--header);
+      color: #eef8f2;
+      padding: 22px 24px 20px;
+    }
+    .topbar-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+    }
+    header .eyebrow {
+      margin: 0 0 6px;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #8fbfa3;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: -0.03em;
+    }
+    header p {
+      margin: 0;
+      color: #c5ddcf;
+      max-width: 640px;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+    .steps {
+      display: flex;
+      gap: 8px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .steps li {
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #d7ebe0;
+    }
+    .steps li b {
+      color: #7dcea0;
+      margin-right: 6px;
+    }
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 22px 24px 72px;
+      display: grid;
+      gap: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 20px 20px 18px;
+    }
+    .panel-head {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--green-soft);
+      color: var(--green-dark);
+      font-weight: 800;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .panel-head h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+    .panel-head p {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .drop {
+      border: 1.5px dashed #b7cfc0;
+      border-radius: 14px;
+      min-height: 132px;
+      padding: 14px;
+      background: #f7fbf8;
+      cursor: pointer;
+      transition: border-color .15s, background .15s, transform .15s;
+    }
+    .drop:hover { border-color: var(--green); transform: translateY(-1px); }
+    .drop strong { display: block; margin-bottom: 6px; }
+    .drop span, .drop em {
+      color: var(--muted);
+      font-size: 13px;
+      font-style: normal;
+      display: block;
+      margin-top: 6px;
+    }
+    .drop em { color: var(--green-dark); font-weight: 600; word-break: break-all; }
+    .drop.ready { border-color: var(--green); background: var(--green-soft); }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 16px;
+    }
+    button, .btn {
+      appearance: none;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .primary { background: var(--green); color: white; }
+    .primary:hover { background: var(--green-dark); }
+    .primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .secondary {
+      background: #fff;
+      color: var(--green-dark);
+      border: 1px solid var(--green);
+    }
+    .secondary:hover { background: var(--green-soft); }
+    .ghost { background: #e7eee9; color: var(--ink); }
+    .ghost:hover { background: #dce8e0; }
+    .ghost:disabled { opacity: 0.45; cursor: not-allowed; }
+    .downloads {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .dl-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      background: #f6faf7;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .dl-group > span {
+      min-width: 52px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .downloads a { background: #eaf6ee; color: var(--green-dark); }
+    .downloads a:hover { background: #d8efe2; }
+    label.inline {
+      color: var(--muted);
+      font-size: 14px;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+    }
+    select {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: white;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .stat {
+      background: #f7faf7;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .stat b { display: block; font-size: 22px; }
+    .stat span { color: var(--muted); font-size: 12px; }
+    .table-wrap {
+      overflow: auto;
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      background: #f3f8f5;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+    th, td {
+      text-align: left;
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    .status { font-weight: 700; text-transform: uppercase; font-size: 11px; }
+    .matched { color: var(--green-dark); }
+    .fuzzy { color: var(--amber); }
+    .unmatched, .duplicate { color: var(--red); }
+    .preview {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #f4f7f4;
+      margin-top: 16px;
+    }
+    .aligner { margin-top: 16px; }
+    .aligner-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .tool-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      background: #f6faf7;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .aligner-toolbar .value {
+      min-width: 168px;
+      color: var(--muted);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+    .aligner-hint {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      background: #f6faf7;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .aligner-stage {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      background: #f4f7f4;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+    .aligner-stage.adding { cursor: crosshair; }
+    .aligner-stage.pasting { cursor: grabbing; }
+    .aligner-stage.edge-ew { cursor: ew-resize; }
+    .aligner-stage.edge-ns { cursor: ns-resize; }
+    .aligner-stage.dragging { cursor: grabbing; }
+    .aligner-stage img {
+      display: block;
+      width: 100%;
+      height: auto;
+      pointer-events: none;
+    }
+    .aligner-stage svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .ok { color: var(--green-dark); font-size: 13px; font-weight: 600; }
+    .error {
+      color: var(--red);
+      background: #fff1f0;
+      border: 1px solid #f0c7c3;
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: none;
+      margin-top: 12px;
+    }
+    .hidden { display: none !important; }
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(15, 42, 29, 0.52);
+    }
+    .modal.hidden { display: none !important; }
+    .modal-card {
+      width: min(440px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 22px 20px 16px;
+    }
+    .modal-card h3 {
+      margin: 0 0 6px;
+      font-size: 18px;
+    }
+    .modal-card .modal-hint {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .modal-card label {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .modal-card input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 15px;
+      color: var(--ink);
+      font-weight: 500;
+    }
+    .modal-card input:focus {
+      outline: 2px solid #c8e6d2;
+      border-color: var(--green);
+    }
+    .modal-card input:disabled {
+      background: #f0f4f1;
+      color: var(--muted);
+      cursor: not-allowed;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 800px) {
+      .grid { grid-template-columns: 1fr; }
+      .topbar-inner { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <p class="eyebrow">Floor plan tools</p>
+        <h1>Floor Plan Area Matcher</h1>
+        <p>
+          Upload the named PDF, the unnamed PDF, and the processor CSV.
+          Optionally add the clean layout and a BACnet ID report (CSV) to split leaf files by Network Number when one floor has multiple processors.
+        </p>
+      </div>
+      <ol class="steps">
+        <li><b>1</b>Setup</li>
+        <li><b>2</b>Align</li>
+        <li><b>3</b>Export</li>
+        <li><b>4</b><a href="/cleaner/" style="color:inherit;text-decoration:none;">Clean</a></li>
+      </ol>
+    </div>
+  </header>
+  <main>
+    <section class="panel">
+      <div class="panel-head">
+        <span class="step-num">1</span>
+        <div>
+          <h2>Setup</h2>
+          <p>Upload the plans and processor CSV, then match.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <label class="drop" id="namedDrop">
+          <strong>With-name PDF</strong>
+          <span>Floor plan that already has labels such as WS-OS-01.</span>
+          <em id="namedName"></em>
+          <input id="namedPdf" type="file" accept="application/pdf,.pdf" hidden />
+        </label>
+        <label class="drop" id="unnamedDrop">
+          <strong>Without-name PDF</strong>
+          <span>Same plan without labels. Names and coordinates are written here.</span>
+          <em id="unnamedName"></em>
+          <input id="unnamedPdf" type="file" accept="application/pdf,.pdf" hidden />
+        </label>
+        <label class="drop" id="csvDrop">
+          <strong>Processor CSV</strong>
+          <span>Area names to match against the named PDF.</span>
+          <em id="csvName"></em>
+          <input id="csvFile" type="file" accept=".csv,text/csv" hidden />
+        </label>
+        <label class="drop" id="cleanDrop">
+          <strong>Clean layout PDF (optional)</strong>
+          <span>Main-project / LMS plan. leaf_coordinates.csv uses this coordinate space.</span>
+          <em id="cleanName"></em>
+          <input id="cleanPdf" type="file" accept="application/pdf,.pdf" hidden />
+        </label>
+        <label class="drop" id="bacnetDrop">
+          <strong>BACnet ID report (optional)</strong>
+          <span>CSV with Device name and Network Number. Splits leaf files per processor.</span>
+          <em id="bacnetName"></em>
+          <input id="bacnetFile" type="file" accept=".csv,text/csv,.txt" hidden />
+        </label>
+      </div>
+      <div class="actions">
+        <label class="inline">Name column
+          <select id="nameColumn"><option value="">Auto-detect</option></select>
+        </label>
+        <label class="inline">
+          <input id="greenOnly" type="checkbox" checked />
+          Green outlines only
+        </label>
+        <button class="primary" id="processBtn" disabled>Match and write coordinates</button>
+        <a class="btn secondary" id="cleanCoordsBtn" href="/cleaner/">Check / clean area coordinates</a>
+        <button class="ghost" id="sampleBtn" type="button">Create sample files</button>
+      </div>
+      <p style="margin:10px 0 0;font-size:13px;color:var(--muted);">
+        Use <strong>Match and write coordinates</strong> to extract from PDFs, or
+        <strong>Check / clean area coordinates</strong> to fix an existing leaf CSV (extra points, review, edit).
+      </p>
+      <p class="error" id="errorBox"></p>
+    </section>
+
+    <section class="panel hidden" id="resultPanel">
+      <div class="panel-head">
+        <span class="step-num">2</span>
+        <div>
+          <h2>Align and export</h2>
+          <p>Fit the overlay, edit or add areas, then download CSV and PDF files.</p>
+        </div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="panel-head" style="margin-top:6px;">
+        <span class="step-num">3</span>
+        <div>
+          <h2>Downloads</h2>
+          <p>Files update when you Apply alignment or Save a new area.</p>
+        </div>
+      </div>
+      <div class="actions downloads" id="downloads"></div>
+      <div class="actions" id="bacnetBar">
+        <label class="inline">Split by BACnet report
+          <input id="bacnetLater" type="file" accept=".csv,text/csv,.txt" />
+        </label>
+        <button class="ghost" type="button" id="bacnetBtn">Split by network number</button>
+        <span class="ok hidden" id="bacnetOk">Network files saved</span>
+      </div>
+      <div class="aligner hidden" id="aligner">
+        <p class="aligner-hint">Red outlines are matched CSV areas. Optional <strong>Show all detected outlines</strong> adds every green path found on the named PDF (can look like extra boxes — leave off for a clean view). Click a red room to edit its name. With <strong>Fit / Increase / Decrease</strong> on, you can drag / scale the whole overlay or drag a red-box edge. Uncheck it to lock the current floor plan in place, then only <strong>Add area</strong> or <strong>Copy</strong> / <strong>Paste</strong> (drag the copy, release to drop; Ctrl+C / Ctrl+V). Turn on <strong>Edit names</strong>, then <strong>Add area</strong>: click every corner (no limit — 5, 6, 12, …). Click <strong>Finish area</strong>, the first green point, or press Enter when done. Drag instead for a 4-point rectangle. A new area uses the current alignment. <strong>Undo</strong> restores the previous overlay or box-edge state. Click <strong>Apply alignment</strong> after pan/scale or before downloading stamped.pdf. Other on-screen edits do not change the PDF until you Apply.</p>
+        <div class="aligner-toolbar">
+          <div class="tool-group">
+            <label class="inline">
+              <input id="scaleTools" type="checkbox" checked />
+              Fit / Increase / Decrease
+            </label>
+            <label class="inline">
+              <input id="showAllOutlines" type="checkbox" />
+              Show all detected outlines
+            </label>
+            <button class="ghost" type="button" id="fitBtn">Fit</button>
+            <button class="ghost" type="button" id="decBtn">Decrease −</button>
+            <button class="ghost" type="button" id="incBtn">Increase +</button>
+            <button class="ghost" type="button" id="resetBtn">Reset</button>
+            <button class="ghost" type="button" id="undoBtn" disabled>Undo</button>
+          </div>
+          <div class="tool-group">
+            <label class="inline">
+              <input id="nameEdit" type="checkbox" />
+              Edit names
+            </label>
+            <button class="ghost" type="button" id="addAreaBtn" disabled>Add area</button>
+            <button class="ghost" type="button" id="copyAreaBtn" disabled>Copy</button>
+            <button class="ghost" type="button" id="pasteAreaBtn" disabled>Paste</button>
+          </div>
+          <div class="tool-group">
+            <button class="primary" type="button" id="applyBtn">Apply alignment</button>
+            <span class="value" id="transformLabel">scale 100% · dx 0 · dy 0</span>
+            <span class="ok hidden" id="applyOk">Alignment saved</span>
+          </div>
+        </div>
+        <div class="aligner-stage" id="stage" tabindex="0">
+          <img id="basePlan" alt="Without-name floor plan" />
+          <svg id="overlaySvg" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+      </div>
+      <img class="preview hidden" id="preview" alt="Stamped floor plan preview" />
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>CSV name</th>
+              <th>Code</th>
+              <th>PDF name</th>
+              <th>Status</th>
+              <th>Score</th>
+              <th>Page</th>
+              <th>Box (x0,y0,x1,y1)</th>
+              <th>Center</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <div id="areaDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="areaDialogTitle">
+    <div class="modal-card">
+      <h3 id="areaDialogTitle">Edit area</h3>
+      <p class="modal-hint" id="areaDialogHint">Change the name for this room. Click Apply alignment to write it into the PDF.</p>
+      <label>Area name
+        <input id="areaDialogName" type="text" autocomplete="off" />
+      </label>
+      <label id="areaDialogCodeLabel"><span id="areaDialogCodeLabelText">Code (optional)</span>
+        <input id="areaDialogCode" type="text" autocomplete="off" />
+      </label>
+      <div id="areaDialogExtras" class="hidden">
+        <label>Processor ID (optional)
+          <input id="areaDialogProcessor" type="text" autocomplete="off" />
+        </label>
+        <label>Root area (optional)
+          <input id="areaDialogRoot" type="text" autocomplete="off" />
+        </label>
+        <label>Root subarea (optional)
+          <input id="areaDialogSubarea" type="text" autocomplete="off" />
+        </label>
+        <label>Root sub-subarea (optional)
+          <input id="areaDialogSubSubarea" type="text" autocomplete="off" />
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="ghost" type="button" id="areaDialogCancel">Cancel</button>
+        <button class="primary" type="button" id="areaDialogSave">Save</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const namedPdf = document.getElementById("namedPdf");
+    const unnamedPdf = document.getElementById("unnamedPdf");
+    const csvFile = document.getElementById("csvFile");
+    const cleanPdf = document.getElementById("cleanPdf");
+    const bacnetFile = document.getElementById("bacnetFile");
+    const processBtn = document.getElementById("processBtn");
+    const errorBox = document.getElementById("errorBox");
+
+    function bindDrop(input, drop, nameEl) {
+      input.addEventListener("change", () => {
+        drop.classList.toggle("ready", Boolean(input.files[0]));
+        nameEl.textContent = input.files[0] ? input.files[0].name : "";
+        updateReady();
+      });
+    }
+
+    bindDrop(namedPdf, document.getElementById("namedDrop"), document.getElementById("namedName"));
+    bindDrop(unnamedPdf, document.getElementById("unnamedDrop"), document.getElementById("unnamedName"));
+    bindDrop(csvFile, document.getElementById("csvDrop"), document.getElementById("csvName"));
+    bindDrop(cleanPdf, document.getElementById("cleanDrop"), document.getElementById("cleanName"));
+    bindDrop(bacnetFile, document.getElementById("bacnetDrop"), document.getElementById("bacnetName"));
+
+    csvFile.addEventListener("change", async () => {
+      if (!csvFile.files[0]) return;
+      const data = new FormData();
+      data.append("csv_file", csvFile.files[0]);
+      const res = await fetch("/api/preview-csv", { method: "POST", body: data });
+      if (!res.ok) return;
+      const payload = await res.json();
+      const select = document.getElementById("nameColumn");
+      select.innerHTML = `<option value="">Auto-detect (${payload.name_column})</option>`;
+      payload.columns.filter(col => col !== "_normalized").forEach(col => {
+        const opt = document.createElement("option");
+        opt.value = col;
+        opt.textContent = col;
+        select.appendChild(opt);
+      });
+    });
+
+    function updateReady() {
+      processBtn.disabled = !(namedPdf.files[0] && unnamedPdf.files[0] && csvFile.files[0]);
+    }
+
+    function showError(message) {
+      errorBox.style.display = message ? "block" : "none";
+      errorBox.textContent = message || "";
+    }
+
+    document.getElementById("sampleBtn").addEventListener("click", async () => {
+      showError("");
+      const res = await fetch("/api/sample", { method: "POST" });
+      const payload = await res.json();
+      const links = Object.entries(payload.downloads).map(([k, v]) => `<a class="btn ghost" href="${v}">${k}</a>`).join("");
+      document.getElementById("downloads").innerHTML = links + "<span style='color:#5b6d64'>Download these, then upload them above to test.</span>";
+      document.getElementById("resultPanel").classList.remove("hidden");
+    });
+
+    processBtn.addEventListener("click", async () => {
+      showError("");
+      processBtn.disabled = true;
+      processBtn.textContent = "Processing...";
+      const data = new FormData();
+      data.append("named_pdf", namedPdf.files[0]);
+      data.append("unnamed_pdf", unnamedPdf.files[0]);
+      data.append("csv_file", csvFile.files[0]);
+      if (cleanPdf.files[0]) data.append("clean_pdf", cleanPdf.files[0]);
+      if (bacnetFile.files[0]) data.append("bacnet_csv", bacnetFile.files[0]);
+      const column = document.getElementById("nameColumn").value;
+      if (column) data.append("name_column", column);
+      data.append("green_only", document.getElementById("greenOnly").checked);
+      try {
+        const res = await fetch("/api/process", { method: "POST", body: data });
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.detail || "Processing failed");
+        renderResult(payload);
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        processBtn.disabled = false;
+        processBtn.textContent = "Match and write coordinates";
+      }
+    });
+
+    let currentJob = null;
+    let overlayData = null;
+    let originalMatches = [];
+    let hoverMatch = null;
+    let edgeDrag = null;
+    let undoStack = [];
+    let pendingUndo = null;
+    let addAreaMode = false;
+    let addRect = null;
+    let addPoly = [];
+    let addPending = null;
+    let addCursor = null;
+    let nameClick = null;
+    let pendingEdge = null;
+    let selectedMatch = null;
+    let areaDialogDone = null;
+    let copiedArea = null;
+    let pastePending = false;
+    let pasteDragging = false;
+    let lastPickIndex = null;
+    let lastStageLoc = null;
+    let areaMove = null;
+    let downPage = null;
+    let areaIdSeq = 1;
+    const transform = { scale: 1, tx: 0, ty: 0 };
+    const UNDO_LIMIT = 80;
+    const SCALE_STEP = 1.05;
+    const SCALE_MIN = 0.25;
+    const SCALE_MAX = 4;
+    const MIN_BOX = 4;
+    const CLICK_SLOP_PX = 8;
+
+    function centroid(points) {
+      if (!points.length) return { x: 0, y: 0 };
+      const sum = points.reduce((acc, pt) => ({ x: acc.x + pt[0], y: acc.y + pt[1] }), { x: 0, y: 0 });
+      return { x: sum.x / points.length, y: sum.y / points.length };
+    }
+
+    function esc(value) {
+      return String(value || "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[ch]));
+    }
+
+    function mapped(x, y) {
+      return [x * transform.scale + transform.tx, y * transform.scale + transform.ty];
+    }
+
+    function unmapped(x, y) {
+      return [(x - transform.tx) / transform.scale, (y - transform.ty) / transform.scale];
+    }
+
+    function clonePoints(points) {
+      return (points || []).map(([x, y]) => [x, y]);
+    }
+
+    function ensureAreaId(row) {
+      if (row.areaId) return row.areaId;
+      row.areaId = row.row_index != null ? `r${row.row_index}` : `a${areaIdSeq++}`;
+      return row.areaId;
+    }
+
+    function findMatchByAreaId(id) {
+      if (!id || !overlayData) return null;
+      return (overlayData.matches || []).find(row => row.areaId === id) || null;
+    }
+
+    function isCopiedArea(row) {
+      return Boolean(row && row.copiedFrom);
+    }
+
+    function inheritedCode(row) {
+      if (!isCopiedArea(row)) return row && row.code ? row.code : "";
+      const src = findMatchByAreaId(row.copiedFrom);
+      if (src) return src.code || "";
+      return row.code || "";
+    }
+
+    function inheritedExtras(row) {
+      const src = isCopiedArea(row) ? findMatchByAreaId(row.copiedFrom) : null;
+      const from = src || row || {};
+      return {
+        processor_id: from.processor_id || "",
+        root_area: from.root_area || "",
+        root_subarea: from.root_subarea || "",
+        root_sub_subarea: from.root_sub_subarea || "",
+      };
+    }
+
+    function identitySnapshot(row) {
+      return {
+        csv_name: row.csv_name || "",
+        code: inheritedCode(row),
+        processor_id: row.processor_id || "",
+        root_area: row.root_area || "",
+        root_subarea: row.root_subarea || "",
+        root_sub_subarea: row.root_sub_subarea || "",
+      };
+    }
+
+    function liveCode(row) {
+      return String(inheritedCode(row) || "").trim();
+    }
+
+    function applyIdentityFields(target, from, { copyCode, copyExtras }) {
+      target.csv_name = from.csv_name || "";
+      if (copyCode && !isCopiedArea(target)) target.code = from.code || "";
+      if (copyExtras) {
+        target.processor_id = from.processor_id || "";
+        target.root_area = from.root_area || "";
+        target.root_subarea = from.root_subarea || "";
+        target.root_sub_subarea = from.root_sub_subarea || "";
+      }
+    }
+
+    function inSameCodeGroup(row, edited, oldCode, newCode) {
+      if (row === edited) return false;
+      const code = liveCode(row);
+      if (oldCode && code === oldCode) return true;
+      if (newCode && code === newCode) return true;
+      if (edited.copiedFrom && (row.areaId === edited.copiedFrom || row.copiedFrom === edited.copiedFrom)) return true;
+      if (edited.areaId && row.copiedFrom === edited.areaId) return true;
+      return false;
+    }
+
+    function syncSameCodePeers(edited, before) {
+      const oldCode = String((before && before.code) || "").trim();
+      const newCode = liveCode(edited);
+      if (!oldCode && !newCode) return;
+      const copyCode = !isCopiedArea(edited);
+      const copyExtras = true;
+      (overlayData.matches || []).forEach((row) => {
+        if (!inSameCodeGroup(row, edited, oldCode, newCode)) return;
+        applyIdentityFields(row, edited, { copyCode, copyExtras });
+      });
+      if (isCopiedArea(edited)) {
+        const src = findMatchByAreaId(edited.copiedFrom);
+        if (src && src !== edited) applyIdentityFields(src, edited, { copyCode: false, copyExtras });
+      }
+      (overlayData.matches || []).forEach((row) => {
+        if (isCopiedArea(row)) row.code = inheritedCode(row);
+      });
+    }
+
+    function matchSourcePoints(row) {
+      if (row.polygon && row.polygon.length) return clonePoints(row.polygon);
+      return [[row.x0, row.y0], [row.x1, row.y0], [row.x1, row.y1], [row.x0, row.y1]];
+    }
+
+    function boundsOf(points) {
+      const xs = points.map(pt => pt[0]);
+      const ys = points.map(pt => pt[1]);
+      return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+    }
+
+    function applyMatchPoints(row, points) {
+      const box = boundsOf(points);
+      row.polygon = points;
+      row.x0 = box.x0;
+      row.y0 = box.y0;
+      row.x1 = box.x1;
+      row.y1 = box.y1;
+      row.center_x = (box.x0 + box.x1) / 2;
+      row.center_y = (box.y0 + box.y1) / 2;
+    }
+
+    function stretchSide(points, box, edge, next) {
+      let x0 = box.x0, y0 = box.y0, x1 = box.x1, y1 = box.y1;
+      if (edge === "left") x0 = Math.min(next, x1 - MIN_BOX);
+      else if (edge === "right") x1 = Math.max(next, x0 + MIN_BOX);
+      else if (edge === "top") y0 = Math.min(next, y1 - MIN_BOX);
+      else if (edge === "bottom") y1 = Math.max(next, y0 + MIN_BOX);
+      const sx = (x1 - x0) / Math.max(box.x1 - box.x0, 1e-6);
+      const sy = (y1 - y0) / Math.max(box.y1 - box.y0, 1e-6);
+      return points.map(([x, y]) => [x0 + (x - box.x0) * sx, y0 + (y - box.y0) * sy]);
+    }
+
+    function clientToPage(event) {
+      const rect = stage.getBoundingClientRect();
+      const page = overlayData.page || { width: 1, height: 1, x0: 0, y0: 0 };
+      if (!rect.width || !rect.height) return null;
+      return {
+        x: (page.x0 || 0) + ((event.clientX - rect.left) / rect.width) * page.width,
+        y: (page.y0 || 0) + ((event.clientY - rect.top) / rect.height) * page.height,
+        rect,
+        page,
+      };
+    }
+
+    function nearestEdge(pt, box, tol) {
+      const { x0, y0, x1, y1 } = box;
+      if (pt.x < x0 - tol || pt.x > x1 + tol || pt.y < y0 - tol || pt.y > y1 + tol) return null;
+      const hits = [
+        ["left", Math.abs(pt.x - x0), pt.y >= y0 - tol && pt.y <= y1 + tol],
+        ["right", Math.abs(pt.x - x1), pt.y >= y0 - tol && pt.y <= y1 + tol],
+        ["top", Math.abs(pt.y - y0), pt.x >= x0 - tol && pt.x <= x1 + tol],
+        ["bottom", Math.abs(pt.y - y1), pt.x >= x0 - tol && pt.x <= x1 + tol],
+      ].filter(([, dist, ok]) => ok && dist <= tol);
+      if (!hits.length) return null;
+      hits.sort((a, b) => a[1] - b[1]);
+      return hits[0][0];
+    }
+
+    function hitMatchEdge(pt, tol) {
+      const hits = [];
+      (overlayData.matches || []).forEach((row, index) => {
+        const box = boundsOf(matchSourcePoints(row).map(([x, y]) => mapped(x, y)));
+        const edge = nearestEdge(pt, box, tol);
+        if (!edge) return;
+        hits.push({ index, edge, area: Math.max(1, (box.x1 - box.x0) * (box.y1 - box.y0)) });
+      });
+      hits.sort((a, b) => a.area - b.area);
+      return hits[0] || null;
+    }
+
+    function edgeTol(event) {
+      const loc = clientToPage(event);
+      if (!loc) return 8;
+      return Math.max(6, (8 / loc.rect.width) * loc.page.width);
+    }
+
+    function hitMatchInterior(pt) {
+      const hits = [];
+      (overlayData.matches || []).forEach((row, index) => {
+        const box = boundsOf(matchSourcePoints(row).map(([x, y]) => mapped(x, y)));
+        if (pt.x >= box.x0 && pt.x <= box.x1 && pt.y >= box.y0 && pt.y <= box.y1) {
+          hits.push({ index, area: Math.max(1, (box.x1 - box.x0) * (box.y1 - box.y0)) });
+        }
+      });
+      hits.sort((a, b) => a.area - b.area);
+      return hits[0] || null;
+    }
+
+    function overlayExtras(row) {
+      return {
+        processor_id: row.processor_id || "",
+        root_area: row.root_area || "",
+        root_subarea: row.root_subarea || "",
+        root_sub_subarea: row.root_sub_subarea || "",
+      };
+    }
+
+    function extrasChanged(row, orig) {
+      const a = overlayExtras(row);
+      const b = overlayExtras(orig || {});
+      return a.processor_id !== b.processor_id
+        || a.root_area !== b.root_area
+        || a.root_subarea !== b.root_subarea
+        || a.root_sub_subarea !== b.root_sub_subarea;
+    }
+
+    function collectEdits() {
+      const edits = [];
+      (overlayData?.matches || []).forEach((row, index) => {
+        if (row.added) return;
+        const orig = originalMatches[index];
+        if (!orig) return;
+        const geomChanged = orig.x0 !== row.x0 || orig.y0 !== row.y0 || orig.x1 !== row.x1 || orig.y1 !== row.y1;
+        const nameChanged = (orig.csv_name || "") !== (row.csv_name || "") || (orig.code || "") !== (row.code || "");
+        const extraChanged = extrasChanged(row, orig);
+        if (!geomChanged && !nameChanged && !extraChanged) return;
+        if (row.row_index == null) return;
+        const edit = {
+          row_index: row.row_index,
+          csv_name: row.csv_name,
+          code: row.code || "",
+        };
+        if (extraChanged) {
+          edit.processor_id = row.processor_id || "";
+          edit.root_area = row.root_area || "";
+          edit.root_subarea = row.root_subarea || "";
+          edit.root_sub_subarea = row.root_sub_subarea || "";
+        }
+        if (geomChanged) {
+          edit.x0 = row.x0;
+          edit.y0 = row.y0;
+          edit.x1 = row.x1;
+          edit.y1 = row.y1;
+          edit.center_x = row.center_x;
+          edit.center_y = row.center_y;
+          edit.polygon = clonePoints(row.polygon);
+        }
+        edits.push(edit);
+      });
+      return edits;
+    }
+
+    function collectAddedAreas() {
+      return (overlayData?.matches || []).filter(row => row.added).map(row => ({
+        csv_name: row.csv_name,
+        code: inheritedCode(row),
+        processor_id: row.processor_id || "",
+        root_area: row.root_area || "",
+        root_subarea: row.root_subarea || "",
+        root_sub_subarea: row.root_sub_subarea || "",
+        page: row.page || 1,
+        x0: row.x0,
+        y0: row.y0,
+        x1: row.x1,
+        y1: row.y1,
+        center_x: row.center_x,
+        center_y: row.center_y,
+        polygon: clonePoints(row.polygon),
+      }));
+    }
+
+    function updateTransformLabel() {
+      const n = collectEdits().length;
+      document.getElementById("transformLabel").textContent =
+        `scale ${(transform.scale * 100).toFixed(1)}% · dx ${transform.tx.toFixed(1)} · dy ${transform.ty.toFixed(1)}`
+        + (n ? ` · ${n} box edit${n === 1 ? "" : "s"}` : "")
+        + (addAreaMode && addPoly.length ? ` · tracing ${addPoly.length} pt${addPoly.length === 1 ? "" : "s"}` : "")
+        + (pastePending ? " · paste: drag to place, release to drop" : "");
+    }
+
+    function drawOverlay() {
+      if (!overlayData) return;
+      const svg = document.getElementById("overlaySvg");
+      const page = overlayData.page || { width: 1000, height: 700, x0: 0, y0: 0 };
+      svg.setAttribute("viewBox", `${page.x0 || 0} ${page.y0 || 0} ${page.width} ${page.height}`);
+      svg.setAttribute("preserveAspectRatio", "none");
+      const fontSize = Math.max(5, page.width / 220);
+      const handle = Math.max(3, page.width / 220);
+      const parts = [];
+      const showAllOutlines = document.getElementById("showAllOutlines")?.checked;
+      if (showAllOutlines) {
+        (overlayData.polygons || []).forEach(poly => {
+          if (!poly.points || poly.points.length < 2) return;
+          const pts = poly.points.map(([x, y]) => mapped(x, y).join(",")).join(" ");
+          parts.push(`<polygon points="${pts}" fill="rgba(31,138,77,0.10)" stroke="#1f8a4d" stroke-width="1.1" vector-effect="non-scaling-stroke" />`);
+        });
+      }
+      (overlayData.matches || []).forEach((row, index) => {
+        const points = matchSourcePoints(row);
+        const pts = points.map(([x, y]) => mapped(x, y).join(",")).join(" ");
+        const active = (hoverMatch && hoverMatch.index === index) || selectedMatch === index || lastPickIndex === index;
+        const stroke = active ? "#7a140e" : "#b42318";
+        const width = active ? "2.2" : "1.4";
+        const fill = active ? "rgba(180,35,24,0.14)" : "rgba(31,138,77,0.12)";
+        parts.push(`<polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="${width}" vector-effect="non-scaling-stroke" />`);
+        if (row.center_x != null) {
+          const [cx, cy] = mapped(row.center_x, row.center_y);
+          const code = inheritedCode(row);
+          const label = code ? `${row.csv_name || ""} (${code})` : (row.csv_name || "");
+          const labelSize = nameEditOn() || active ? fontSize * 1.35 : fontSize;
+          if ((nameEditOn() || active) && label) {
+            const tw = Math.max(18, label.length * labelSize * 0.56);
+            const th = labelSize * 1.55;
+            parts.push(`<rect x="${cx - tw / 2}" y="${cy - th / 2}" width="${tw}" height="${th}" rx="${th / 3}" fill="#ffffff" stroke="#146338" stroke-width="0.7" vector-effect="non-scaling-stroke" />`);
+          }
+          parts.push(`<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" fill="#146338" font-size="${labelSize}">${esc(label)}</text>`);
+        }
+        if (active) {
+          const box = boundsOf(points.map(([x, y]) => mapped(x, y)));
+          const mids = [
+            [(box.x0), (box.y0 + box.y1) / 2],
+            [(box.x1), (box.y0 + box.y1) / 2],
+            [(box.x0 + box.x1) / 2, box.y0],
+            [(box.x0 + box.x1) / 2, box.y1],
+          ];
+          mids.forEach(([hx, hy]) => {
+            parts.push(`<rect x="${hx - handle / 2}" y="${hy - handle / 2}" width="${handle}" height="${handle}" fill="#fff" stroke="#7a140e" stroke-width="1" vector-effect="non-scaling-stroke" />`);
+          });
+        }
+      });
+      if (addPoly.length) {
+        const preview = addCursor ? addPoly.concat([addCursor]) : addPoly;
+        const line = preview.map(p => `${p.x},${p.y}`).join(" ");
+        parts.push(`<polyline points="${line}" fill="none" stroke="#17824a" stroke-width="1.6" stroke-dasharray="4 3" vector-effect="non-scaling-stroke" />`);
+        if (addPoly.length >= 3) {
+          parts.push(`<polygon points="${addPoly.map(p => `${p.x},${p.y}`).join(" ")}" fill="rgba(23,130,74,0.10)" stroke="none" />`);
+        }
+        addPoly.forEach((p, i) => {
+          const r = i === 0 ? handle * 1.15 : handle * 0.85;
+          parts.push(`<circle cx="${p.x}" cy="${p.y}" r="${r}" fill="${i === 0 ? "#17824a" : "#fff"}" stroke="#17824a" stroke-width="1.2" vector-effect="non-scaling-stroke" />`);
+        });
+      }
+      if (addRect) {
+        const x0 = Math.min(addRect.x0, addRect.x1);
+        const y0 = Math.min(addRect.y0, addRect.y1);
+        const w = Math.abs(addRect.x1 - addRect.x0);
+        const h = Math.abs(addRect.y1 - addRect.y0);
+        parts.push(`<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="rgba(23,130,74,0.12)" stroke="#17824a" stroke-width="1.6" stroke-dasharray="4 3" vector-effect="non-scaling-stroke" />`);
+      }
+      if (pastePending && copiedArea && lastStageLoc) {
+        const [sx, sy] = unmapped(lastStageLoc.x, lastStageLoc.y);
+        const dx = sx - copiedArea.cx;
+        const dy = sy - copiedArea.cy;
+        const pts = copiedArea.points.map(([x, y]) => mapped(x + dx, y + dy).join(",")).join(" ");
+        parts.push(`<polygon points="${pts}" fill="rgba(23,130,74,0.18)" stroke="#17824a" stroke-width="2" stroke-dasharray="5 3" vector-effect="non-scaling-stroke" />`);
+      }
+      svg.innerHTML = parts.join("");
+      updateTransformLabel();
+    }
+
+    function overlayPoints() {
+      const fromPolys = (overlayData?.polygons || []).flatMap(p => p.points || []);
+      if (fromPolys.length) return fromPolys;
+      return (overlayData?.matches || []).flatMap(row => {
+        if (row.polygon && row.polygon.length) return row.polygon;
+        if (row.x0 == null || row.y0 == null || row.x1 == null || row.y1 == null) return [];
+        return [[row.x0, row.y0], [row.x1, row.y0], [row.x1, row.y1], [row.x0, row.y1]];
+      });
+    }
+
+    function markUnsaved() {
+      document.getElementById("applyOk").classList.add("hidden");
+    }
+
+    function snapshotMatch(row) {
+      return {
+        row_index: row.row_index,
+        areaId: row.areaId,
+        copiedFrom: row.copiedFrom || null,
+        csv_name: row.csv_name,
+        code: row.code,
+        processor_id: row.processor_id || "",
+        root_area: row.root_area || "",
+        root_subarea: row.root_subarea || "",
+        root_sub_subarea: row.root_sub_subarea || "",
+        status: row.status,
+        added: Boolean(row.added),
+        page: row.page,
+        x0: row.x0,
+        y0: row.y0,
+        x1: row.x1,
+        y1: row.y1,
+        center_x: row.center_x,
+        center_y: row.center_y,
+        polygon: clonePoints(row.polygon),
+      };
+    }
+
+    function captureState() {
+      return {
+        transform: { scale: transform.scale, tx: transform.tx, ty: transform.ty },
+        matches: (overlayData?.matches || []).map(snapshotMatch),
+      };
+    }
+
+    function statesEqual(a, b) {
+      if (!a || !b) return false;
+      if (a.transform.scale !== b.transform.scale || a.transform.tx !== b.transform.tx || a.transform.ty !== b.transform.ty) return false;
+      if (a.matches.length !== b.matches.length) return false;
+      return a.matches.every((row, i) => {
+        const other = b.matches[i];
+        return other && row.x0 === other.x0 && row.y0 === other.y0 && row.x1 === other.x1 && row.y1 === other.y1
+          && (row.csv_name || "") === (other.csv_name || "") && (row.code || "") === (other.code || "")
+          && (row.processor_id || "") === (other.processor_id || "")
+          && (row.root_area || "") === (other.root_area || "")
+          && (row.root_subarea || "") === (other.root_subarea || "")
+          && (row.root_sub_subarea || "") === (other.root_sub_subarea || "");
+      });
+    }
+
+    function restoreState(state) {
+      transform.scale = state.transform.scale;
+      transform.tx = state.transform.tx;
+      transform.ty = state.transform.ty;
+      overlayData.matches = state.matches.map(src => ({
+        row_index: src.row_index,
+        areaId: src.areaId,
+        copiedFrom: src.copiedFrom || null,
+        csv_name: src.csv_name,
+        code: src.code,
+        processor_id: src.processor_id || "",
+        root_area: src.root_area || "",
+        root_subarea: src.root_subarea || "",
+        root_sub_subarea: src.root_sub_subarea || "",
+        status: src.status || "matched",
+        added: Boolean(src.added),
+        page: src.page || 1,
+        x0: src.x0,
+        y0: src.y0,
+        x1: src.x1,
+        y1: src.y1,
+        center_x: src.center_x,
+        center_y: src.center_y,
+        polygon: clonePoints(src.polygon),
+      }));
+    }
+
+    function updateUndoBtn() {
+      const btn = document.getElementById("undoBtn");
+      if (btn) btn.disabled = undoStack.length === 0;
+    }
+
+    function commitPendingUndo() {
+      if (pendingUndo && !statesEqual(pendingUndo, captureState())) {
+        undoStack.push(pendingUndo);
+        if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+        updateUndoBtn();
+      }
+      pendingUndo = null;
+      dragMoved = false;
+    }
+
+    function runWithUndo(fn) {
+      if (!overlayData) return;
+      const before = captureState();
+      fn();
+      if (!statesEqual(before, captureState())) {
+        undoStack.push(before);
+        if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+        updateUndoBtn();
+      }
+    }
+
+    function undoLast() {
+      if (!overlayData || !undoStack.length) return;
+      restoreState(undoStack.pop());
+      markUnsaved();
+      drawOverlay();
+      updateUndoBtn();
+    }
+
+    function scaleToolsOn() {
+      return document.getElementById("scaleTools").checked;
+    }
+
+    function syncScaleTools() {
+      const on = scaleToolsOn();
+      document.getElementById("fitBtn").disabled = !on;
+      document.getElementById("incBtn").disabled = !on;
+      document.getElementById("decBtn").disabled = !on;
+      document.getElementById("resetBtn").disabled = !on;
+    }
+
+    function setScale(next) {
+      const points = overlayPoints();
+      const c = centroid(points);
+      const cx = c.x * transform.scale + transform.tx;
+      const cy = c.y * transform.scale + transform.ty;
+      transform.scale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, next));
+      transform.tx = cx - c.x * transform.scale;
+      transform.ty = cy - c.y * transform.scale;
+      markUnsaved();
+      drawOverlay();
+    }
+
+    function applyFit() {
+      const fit = overlayData?.fit || { scale: 1, tx: 0, ty: 0 };
+      transform.scale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, Number(fit.scale) || 1));
+      transform.tx = Number.isFinite(fit.tx) ? fit.tx : 0;
+      transform.ty = Number.isFinite(fit.ty) ? fit.ty : 0;
+      markUnsaved();
+      drawOverlay();
+    }
+
+    function resetTransform() {
+      transform.scale = 1;
+      transform.tx = 0;
+      transform.ty = 0;
+      markUnsaved();
+      drawOverlay();
+    }
+
+    function setupAligner(payload) {
+      overlayData = payload.overlay;
+      currentJob = payload.job_id;
+      hoverMatch = null;
+      edgeDrag = null;
+      undoStack = [];
+      pendingUndo = null;
+      dragMoved = false;
+      areaIdSeq = 1;
+      updateUndoBtn();
+      if (!overlayData) {
+        document.getElementById("aligner").classList.add("hidden");
+        originalMatches = [];
+        return;
+      }
+      (overlayData.matches || []).forEach((row, index) => {
+        if (row.row_index == null) row.row_index = index;
+        ensureAreaId(row);
+        if (!row.polygon || !row.polygon.length) {
+          row.polygon = [[row.x0, row.y0], [row.x1, row.y0], [row.x1, row.y1], [row.x0, row.y1]];
+        }
+      });
+      originalMatches = (overlayData.matches || []).map(row => ({
+        x0: row.x0,
+        y0: row.y0,
+        x1: row.x1,
+        y1: row.y1,
+        csv_name: row.csv_name,
+        code: row.code || "",
+        processor_id: row.processor_id || "",
+        root_area: row.root_area || "",
+        root_subarea: row.root_subarea || "",
+        root_sub_subarea: row.root_sub_subarea || "",
+        polygon: clonePoints(row.polygon),
+      }));
+      addAreaMode = false;
+      addRect = null;
+      addPoly = [];
+      addPending = null;
+      addCursor = null;
+      nameClick = null;
+      pendingEdge = null;
+      selectedMatch = null;
+      copiedArea = null;
+      pastePending = false;
+      pasteDragging = false;
+      lastPickIndex = null;
+      lastStageLoc = null;
+      areaMove = null;
+      downPage = null;
+      closeAreaDialog(null);
+      const addBtn = document.getElementById("addAreaBtn");
+      if (addBtn) addBtn.disabled = !document.getElementById("nameEdit").checked;
+      stage.classList.remove("adding", "pasting");
+      syncCopyPasteBtns();
+      const aligner = document.getElementById("aligner");
+      const base = document.getElementById("basePlan");
+      aligner.classList.remove("hidden");
+      document.getElementById("applyOk").classList.add("hidden");
+      applyFit();
+      base.onload = drawOverlay;
+      base.src = payload.downloads.preview_png + "?t=" + Date.now();
+      drawOverlay();
+    }
+
+    const stage = document.getElementById("stage");
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    function setEdgeCursor(edge) {
+      stage.classList.toggle("edge-ew", edge === "left" || edge === "right");
+      stage.classList.toggle("edge-ns", edge === "top" || edge === "bottom");
+    }
+
+    function nameEditOn() {
+      return document.getElementById("nameEdit").checked;
+    }
+
+    function syncNameEdit() {
+      const on = nameEditOn();
+      document.getElementById("addAreaBtn").disabled = !on;
+      if (!on) {
+        addAreaMode = false;
+        addRect = null;
+        addPoly = [];
+        addPending = null;
+        addCursor = null;
+        selectedMatch = null;
+        closeAreaDialog(null);
+        stage.classList.remove("adding");
+        drawOverlay();
+      } else {
+        drawOverlay();
+      }
+    }
+
+    function closeAreaDialog(result) {
+      const dialog = document.getElementById("areaDialog");
+      dialog.classList.add("hidden");
+      const done = areaDialogDone;
+      areaDialogDone = null;
+      if (done) done(result);
+    }
+
+    function openAreaDialog({ title, hint, name, code, extra, lockCode }) {
+      return new Promise((resolve) => {
+        if (areaDialogDone) closeAreaDialog(null);
+        areaDialogDone = resolve;
+        document.getElementById("areaDialogTitle").textContent = title;
+        document.getElementById("areaDialogHint").textContent = hint;
+        const nameInput = document.getElementById("areaDialogName");
+        const codeInput = document.getElementById("areaDialogCode");
+        const codeLabelText = document.getElementById("areaDialogCodeLabelText");
+        const extras = document.getElementById("areaDialogExtras");
+        nameInput.value = name || "";
+        codeInput.value = code || "";
+        codeInput.disabled = Boolean(lockCode);
+        codeInput.readOnly = Boolean(lockCode);
+        if (codeLabelText) {
+          codeLabelText.textContent = lockCode ? "Code (copied, cannot edit)" : "Code (optional)";
+        }
+        document.getElementById("areaDialogProcessor").value = extra ? (extra.processor_id || "") : "";
+        document.getElementById("areaDialogRoot").value = extra ? (extra.root_area || "") : "";
+        document.getElementById("areaDialogSubarea").value = extra ? (extra.root_subarea || "") : "";
+        document.getElementById("areaDialogSubSubarea").value = extra ? (extra.root_sub_subarea || "") : "";
+        extras.classList.toggle("hidden", !extra);
+        document.getElementById("areaDialog").classList.remove("hidden");
+        requestAnimationFrame(() => {
+          nameInput.focus();
+          nameInput.select();
+        });
+      });
+    }
+
+    function saveAreaDialog() {
+      const name = document.getElementById("areaDialogName").value.trim();
+      const codeInput = document.getElementById("areaDialogCode");
+      const code = codeInput.disabled ? (codeInput.value || "").trim() : codeInput.value.trim();
+      if (!name) {
+        document.getElementById("areaDialogName").focus();
+        return;
+      }
+      closeAreaDialog({
+        name,
+        code,
+        codeLocked: Boolean(codeInput.disabled),
+        processor_id: document.getElementById("areaDialogProcessor").value.trim(),
+        root_area: document.getElementById("areaDialogRoot").value.trim(),
+        root_subarea: document.getElementById("areaDialogSubarea").value.trim(),
+        root_sub_subarea: document.getElementById("areaDialogSubSubarea").value.trim(),
+      });
+    }
+
+    function renameMatch(index) {
+      const row = overlayData.matches[index];
+      if (!row) return;
+      selectedMatch = index;
+      drawOverlay();
+      const copied = isCopiedArea(row);
+      openAreaDialog({
+        title: "Edit area",
+        hint: copied
+          ? "Name can be edited. Code is copied and cannot be changed. Save writes this into the CSVs and updates every other room with this same area code. Boxes stay where they are."
+          : "This is the current name for the highlighted room. Save writes it into the CSVs and updates every other room with this same area code.",
+        name: row.csv_name || "",
+        code: inheritedCode(row),
+        lockCode: copied,
+        extra: inheritedExtras(row),
+      }).then((result) => {
+        selectedMatch = null;
+        if (!result) {
+          drawOverlay();
+          return;
+        }
+        const nextCode = copied ? inheritedCode(row) : result.code;
+        const sameName = result.name === (row.csv_name || "") && nextCode === (row.code || "");
+        const extras = inheritedExtras(row);
+        const sameExtra =
+          (result.processor_id || "") === (extras.processor_id || "")
+          && (result.root_area || "") === (extras.root_area || "")
+          && (result.root_subarea || "") === (extras.root_subarea || "")
+          && (result.root_sub_subarea || "") === (extras.root_sub_subarea || "");
+        if (sameName && sameExtra) {
+          drawOverlay();
+          return;
+        }
+        runWithUndo(() => {
+          const before = identitySnapshot(row);
+          row.csv_name = result.name;
+          row.code = nextCode;
+          row.processor_id = result.processor_id || "";
+          row.root_area = result.root_area || "";
+          row.root_subarea = result.root_subarea || "";
+          row.root_sub_subarea = result.root_sub_subarea || "";
+          syncSameCodePeers(row, before);
+          markUnsaved();
+          drawOverlay();
+        });
+        showError("");
+        applyCurrentAlignment().catch((err) => showError(err.message));
+      });
+    }
+
+    function syncAddAreaBtn() {
+      const btn = document.getElementById("addAreaBtn");
+      if (!btn) return;
+      if (addAreaMode && addPoly.length >= 3) {
+        btn.textContent = `Finish area (${addPoly.length} pts)`;
+      } else if (addAreaMode && addPoly.length) {
+        btn.textContent = `Add area (${addPoly.length} pts)`;
+      } else {
+        btn.textContent = "Add area";
+      }
+    }
+
+    function clearAddDrawing() {
+      addPoly = [];
+      addRect = null;
+      addPending = null;
+      addCursor = null;
+      addAreaMode = false;
+      stage.classList.remove("adding");
+      syncAddAreaBtn();
+    }
+
+    function saveAddedPolygon(srcPoints) {
+      if (!srcPoints || srcPoints.length < 3) {
+        drawOverlay();
+        return;
+      }
+      const box = boundsOf(srcPoints);
+      const c = centroid(srcPoints);
+      openAreaDialog({
+        title: "Add area",
+        hint: "Name the new area. Save writes all traced points into coordinates.csv and leaf_coordinates.csv using the current alignment.",
+        name: "",
+        code: "",
+        extra: { processor_id: "", root_area: "", root_subarea: "", root_sub_subarea: "" },
+      }).then((result) => {
+        if (!result) {
+          drawOverlay();
+          return;
+        }
+        pushAddedArea(srcPoints, result);
+      });
+    }
+
+    function pushAddedArea(srcPoints, meta) {
+      const box = boundsOf(srcPoints);
+      const c = centroid(srcPoints);
+      runWithUndo(() => {
+        overlayData.matches.push({
+          added: true,
+          areaId: `a${areaIdSeq++}`,
+          copiedFrom: meta.copiedFrom || null,
+          csv_name: meta.name,
+          code: meta.code || "",
+          processor_id: meta.processor_id || "",
+          root_area: meta.root_area || "",
+          root_subarea: meta.root_subarea || "",
+          root_sub_subarea: meta.root_sub_subarea || "",
+          status: "matched",
+          page: 1,
+          x0: box.x0,
+          y0: box.y0,
+          x1: box.x1,
+          y1: box.y1,
+          center_x: c.x,
+          center_y: c.y,
+          polygon: srcPoints.map(([x, y]) => [x, y]),
+        });
+        markUnsaved();
+        drawOverlay();
+      });
+      showError("");
+      applyCurrentAlignment().catch((err) => showError(err.message));
+    }
+
+    function syncCopyPasteBtns() {
+      const copyBtn = document.getElementById("copyAreaBtn");
+      const pasteBtn = document.getElementById("pasteAreaBtn");
+      if (copyBtn) copyBtn.disabled = lastPickIndex == null && !(hoverMatch && overlayData);
+      if (pasteBtn) pasteBtn.disabled = !copiedArea;
+    }
+
+    function copyCurrentArea() {
+      if (!overlayData) return;
+      const index = lastPickIndex != null ? lastPickIndex : (hoverMatch ? hoverMatch.index : null);
+      const row = index != null ? overlayData.matches[index] : null;
+      if (!row) return;
+      const points = matchSourcePoints(row);
+      if (points.length < 3) return;
+      const c = centroid(points);
+      const sourceId = row.copiedFrom || ensureAreaId(row);
+      const extras = inheritedExtras(row);
+      copiedArea = {
+        points: clonePoints(points),
+        cx: c.x,
+        cy: c.y,
+        name: row.csv_name || "",
+        code: inheritedCode(row),
+        copiedFrom: sourceId,
+        processor_id: extras.processor_id,
+        root_area: extras.root_area,
+        root_subarea: extras.root_subarea,
+        root_sub_subarea: extras.root_sub_subarea,
+      };
+      lastPickIndex = index;
+      syncCopyPasteBtns();
+      drawOverlay();
+    }
+
+    function beginPaste() {
+      if (!copiedArea || !overlayData) return;
+      pastePending = true;
+      pasteDragging = false;
+      stage.classList.add("pasting");
+      drawOverlay();
+    }
+
+    function cancelPaste() {
+      if (!pastePending) return;
+      pastePending = false;
+      pasteDragging = false;
+      stage.classList.remove("pasting");
+      drawOverlay();
+    }
+
+    function pasteCopiedAt(pageX, pageY) {
+      if (!copiedArea || !overlayData) return;
+      const [sx, sy] = unmapped(pageX, pageY);
+      const dx = sx - copiedArea.cx;
+      const dy = sy - copiedArea.cy;
+      const src = findMatchByAreaId(copiedArea.copiedFrom);
+      const srcPoints = copiedArea.points.map(([x, y]) => [x + dx, y + dy]);
+      pastePending = false;
+      pasteDragging = false;
+      stage.classList.remove("pasting");
+      pushAddedArea(srcPoints, {
+        name: src ? (src.csv_name || copiedArea.name) : copiedArea.name,
+        code: src ? (src.code || "") : (copiedArea.code || ""),
+        copiedFrom: copiedArea.copiedFrom,
+        processor_id: src ? (src.processor_id || "") : (copiedArea.processor_id || ""),
+        root_area: src ? (src.root_area || "") : (copiedArea.root_area || ""),
+        root_subarea: src ? (src.root_subarea || "") : (copiedArea.root_subarea || ""),
+        root_sub_subarea: src ? (src.root_sub_subarea || "") : (copiedArea.root_sub_subarea || ""),
+      });
+    }
+
+    function commitAddPolygon() {
+      const pagePts = addPoly.slice();
+      clearAddDrawing();
+      if (pagePts.length < 3) {
+        drawOverlay();
+        return;
+      }
+      saveAddedPolygon(pagePts.map(p => unmapped(p.x, p.y)));
+    }
+
+    function addCloseTol() {
+      const page = overlayData?.page || { width: 1000 };
+      return Math.max(6, page.width / 220);
+    }
+
+    function handleAddVertex(loc, event) {
+      const tol = addCloseTol();
+      if (addPoly.length >= 3 && Math.hypot(loc.x - addPoly[0].x, loc.y - addPoly[0].y) <= tol) {
+        commitAddPolygon();
+        return;
+      }
+      const last = addPoly[addPoly.length - 1];
+      const nearLast = last && Math.hypot(loc.x - last.x, loc.y - last.y) <= tol;
+      if (event && event.detail >= 2 && nearLast && addPoly.length >= 3) {
+        commitAddPolygon();
+        return;
+      }
+      addPoly.push({ x: loc.x, y: loc.y });
+      addCursor = { x: loc.x, y: loc.y };
+      syncAddAreaBtn();
+      drawOverlay();
+    }
+
+    function finishAddArea() {
+      if (!addRect) return;
+      const x0 = Math.min(addRect.x0, addRect.x1);
+      const y0 = Math.min(addRect.y0, addRect.y1);
+      const x1 = Math.max(addRect.x0, addRect.x1);
+      const y1 = Math.max(addRect.y0, addRect.y1);
+      clearAddDrawing();
+      if (x1 - x0 < MIN_BOX || y1 - y0 < MIN_BOX) {
+        drawOverlay();
+        return;
+      }
+      const [sx0, sy0] = unmapped(x0, y0);
+      const [sx1, sy1] = unmapped(x1, y1);
+      saveAddedPolygon([
+        [Math.min(sx0, sx1), Math.min(sy0, sy1)],
+        [Math.max(sx0, sx1), Math.min(sy0, sy1)],
+        [Math.max(sx0, sx1), Math.max(sy0, sy1)],
+        [Math.min(sx0, sx1), Math.max(sy0, sy1)],
+      ]);
+    }
+
+    function stopDrag(event) {
+      if (pastePending && pasteDragging) {
+        const loc = (event && clientToPage(event)) || lastStageLoc;
+        if (loc) pasteCopiedAt(loc.x, loc.y);
+        pendingUndo = null;
+        dragMoved = false;
+        dragging = false;
+        edgeDrag = null;
+        areaMove = null;
+        nameClick = null;
+        pendingEdge = null;
+        stage.classList.remove("dragging");
+        setEdgeCursor(null);
+        return;
+      }
+      if (addRect) {
+        finishAddArea();
+        pendingUndo = null;
+        dragMoved = false;
+        dragging = false;
+        edgeDrag = null;
+        nameClick = null;
+        pendingEdge = null;
+        stage.classList.remove("dragging");
+        setEdgeCursor(null);
+        return;
+      }
+      if (addAreaMode && addPending && !dragMoved) {
+        handleAddVertex(addPending, event);
+        addPending = null;
+        pendingUndo = null;
+        dragMoved = false;
+        dragging = false;
+        edgeDrag = null;
+        nameClick = null;
+        pendingEdge = null;
+        stage.classList.remove("dragging");
+        setEdgeCursor(null);
+        return;
+      }
+      addPending = null;
+      const clicked = nameClick;
+      const moved = dragMoved;
+      if (dragMoved) commitPendingUndo();
+      else pendingUndo = null;
+      dragging = false;
+      edgeDrag = null;
+      areaMove = null;
+      downPage = null;
+      pendingEdge = null;
+      dragMoved = false;
+      nameClick = null;
+      stage.classList.remove("dragging");
+      setEdgeCursor(null);
+      if (clicked != null && !moved) renameMatch(clicked);
+    }
+
+    stage.addEventListener("pointerdown", (event) => {
+      if (!overlayData || event.button !== 0) return;
+      if (!document.getElementById("areaDialog").classList.contains("hidden")) return;
+      const loc = clientToPage(event);
+      if (pastePending && loc) {
+        pasteDragging = true;
+        lastStageLoc = { x: loc.x, y: loc.y };
+        drawOverlay();
+        stage.setPointerCapture(event.pointerId);
+        stage.focus();
+        return;
+      }
+      pendingUndo = captureState();
+      dragMoved = false;
+      nameClick = null;
+      pendingEdge = null;
+      areaMove = null;
+      downPage = loc ? { x: loc.x, y: loc.y } : null;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      if (addAreaMode && loc) {
+        addPending = { x: loc.x, y: loc.y };
+        addCursor = { x: loc.x, y: loc.y };
+        stage.setPointerCapture(event.pointerId);
+        stage.focus();
+        drawOverlay();
+        return;
+      }
+      const hit = loc ? hitMatchEdge(loc, edgeTol(event)) : null;
+      const inside = loc ? hitMatchInterior(loc) : null;
+      if (inside || hit) {
+        const index = inside ? inside.index : hit.index;
+        const row = overlayData.matches[index];
+        const points = matchSourcePoints(row);
+        nameClick = index;
+        lastPickIndex = index;
+        syncCopyPasteBtns();
+        hoverMatch = inside || hit;
+        if (hit && hit.index === index && (scaleToolsOn() || row.added)) {
+          pendingEdge = {
+            index: hit.index,
+            edge: hit.edge,
+            points,
+            box: boundsOf(points),
+          };
+          setEdgeCursor(hit.edge);
+        }
+        drawOverlay();
+      } else if (scaleToolsOn()) {
+        dragging = true;
+        stage.classList.add("dragging");
+      }
+      stage.setPointerCapture(event.pointerId);
+      stage.focus();
+    });
+    stage.addEventListener("pointermove", (event) => {
+      if (!overlayData) return;
+      if (pastePending) {
+        const loc = clientToPage(event);
+        if (!loc) return;
+        lastStageLoc = { x: loc.x, y: loc.y };
+        drawOverlay();
+        return;
+      }
+      if (addAreaMode) {
+        const loc = clientToPage(event);
+        if (!loc) return;
+        addCursor = { x: loc.x, y: loc.y };
+        if (addPending && !addPoly.length && Math.hypot(event.clientX - lastX, event.clientY - lastY) > CLICK_SLOP_PX) {
+          addRect = { x0: addPending.x, y0: addPending.y, x1: loc.x, y1: loc.y };
+          addPending = null;
+          dragMoved = true;
+        } else if (addRect) {
+          addRect.x1 = loc.x;
+          addRect.y1 = loc.y;
+          dragMoved = true;
+        }
+        drawOverlay();
+        return;
+      }
+      if (addRect) {
+        const loc = clientToPage(event);
+        if (!loc) return;
+        addRect.x1 = loc.x;
+        addRect.y1 = loc.y;
+        dragMoved = true;
+        drawOverlay();
+        return;
+      }
+      if (nameClick != null && !edgeDrag && !dragging && !areaMove) {
+        if (Math.hypot(event.clientX - lastX, event.clientY - lastY) <= CLICK_SLOP_PX) return;
+        const moveIndex = nameClick;
+        const row = overlayData.matches[moveIndex];
+        if (pendingEdge && (scaleToolsOn() || row.added)) {
+          nameClick = null;
+          edgeDrag = pendingEdge;
+          pendingEdge = null;
+        } else if (row && row.added) {
+          nameClick = null;
+          areaMove = { index: moveIndex, points: matchSourcePoints(row) };
+          dragMoved = true;
+        } else if (scaleToolsOn()) {
+          nameClick = null;
+          dragging = true;
+          stage.classList.add("dragging");
+        }
+      }
+      if (areaMove) {
+        const loc = clientToPage(event);
+        if (!loc || !downPage) return;
+        const [sx, sy] = unmapped(loc.x, loc.y);
+        const [ox, oy] = unmapped(downPage.x, downPage.y);
+        const row = overlayData.matches[areaMove.index];
+        applyMatchPoints(row, areaMove.points.map(([x, y]) => [x + sx - ox, y + sy - oy]));
+        dragMoved = true;
+        markUnsaved();
+        drawOverlay();
+        return;
+      }
+      if (edgeDrag) {
+        const row = overlayData.matches[edgeDrag.index];
+        if (!scaleToolsOn() && !(row && row.added)) return;
+        const loc = clientToPage(event);
+        if (!loc) return;
+        const [sx, sy] = unmapped(loc.x, loc.y);
+        const next = (edgeDrag.edge === "left" || edgeDrag.edge === "right") ? sx : sy;
+        applyMatchPoints(row, stretchSide(edgeDrag.points, edgeDrag.box, edgeDrag.edge, next));
+        dragMoved = true;
+        markUnsaved();
+        drawOverlay();
+        return;
+      }
+      if (dragging) {
+        if (!scaleToolsOn()) return;
+        const rect = stage.getBoundingClientRect();
+        const page = overlayData.page;
+        if (!rect.width || !rect.height || !page) return;
+        transform.tx += ((event.clientX - lastX) / rect.width) * page.width;
+        transform.ty += ((event.clientY - lastY) / rect.height) * page.height;
+        dragMoved = true;
+        lastX = event.clientX;
+        lastY = event.clientY;
+        markUnsaved();
+        drawOverlay();
+        return;
+      }
+      const loc = clientToPage(event);
+      if (loc) lastStageLoc = { x: loc.x, y: loc.y };
+      const hit = loc ? hitMatchEdge(loc, edgeTol(event)) : null;
+      const prevIdx = hoverMatch ? hoverMatch.index : -1;
+      const hitIdx = hit ? hit.index : -1;
+      hoverMatch = hit;
+      setEdgeCursor(hit ? hit.edge : null);
+      if (prevIdx !== hitIdx) drawOverlay();
+    });
+    stage.addEventListener("pointerup", stopDrag);
+    stage.addEventListener("pointercancel", stopDrag);
+    stage.addEventListener("pointerleave", () => {
+      if (dragging || edgeDrag) return;
+      if (hoverMatch) {
+        hoverMatch = null;
+        setEdgeCursor(null);
+        drawOverlay();
+      }
+    });
+    stage.addEventListener("wheel", (event) => {
+      if (!overlayData || !scaleToolsOn()) return;
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? SCALE_STEP : 1 / SCALE_STEP;
+      runWithUndo(() => setScale(transform.scale * factor));
+    }, { passive: false });
+    stage.addEventListener("keydown", (event) => {
+      if (!overlayData || !scaleToolsOn()) return;
+      const step = event.shiftKey ? 5 : 1;
+      let dx = 0;
+      let dy = 0;
+      if (event.key === "ArrowLeft") dx = -step;
+      else if (event.key === "ArrowRight") dx = step;
+      else if (event.key === "ArrowUp") dy = -step;
+      else if (event.key === "ArrowDown") dy = step;
+      else return;
+      event.preventDefault();
+      runWithUndo(() => {
+        transform.tx += dx;
+        transform.ty += dy;
+        markUnsaved();
+        drawOverlay();
+      });
+    });
+
+    document.getElementById("scaleTools").addEventListener("change", syncScaleTools);
+    document.getElementById("showAllOutlines").addEventListener("change", () => drawOverlay());
+    document.getElementById("nameEdit").addEventListener("change", syncNameEdit);
+    document.getElementById("areaDialogCancel").addEventListener("click", () => closeAreaDialog(null));
+    document.getElementById("areaDialogSave").addEventListener("click", saveAreaDialog);
+    document.getElementById("areaDialog").addEventListener("click", (event) => {
+      if (event.target.id === "areaDialog") closeAreaDialog(null);
+    });
+    document.addEventListener("keydown", (event) => {
+      if (!document.getElementById("areaDialog").classList.contains("hidden")) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeAreaDialog(null);
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          saveAreaDialog();
+        }
+        return;
+      }
+      if (addAreaMode) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          if (addPoly.length >= 3) commitAddPolygon();
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          clearAddDrawing();
+          drawOverlay();
+          return;
+        }
+      }
+      if (!overlayData) return;
+      const tag = event.target && event.target.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      if (event.key === "Escape" && pastePending) {
+        event.preventDefault();
+        cancelPaste();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        copyCurrentArea();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+        event.preventDefault();
+        beginPaste();
+      }
+    });
+    document.getElementById("copyAreaBtn").addEventListener("click", copyCurrentArea);
+    document.getElementById("pasteAreaBtn").addEventListener("click", beginPaste);
+    document.getElementById("addAreaBtn").addEventListener("click", () => {
+      if (!nameEditOn()) return;
+      cancelPaste();
+      if (addAreaMode && addPoly.length >= 3) {
+        commitAddPolygon();
+        return;
+      }
+      if (addAreaMode) {
+        clearAddDrawing();
+        drawOverlay();
+        return;
+      }
+      addAreaMode = true;
+      addRect = null;
+      addPoly = [];
+      addPending = null;
+      addCursor = null;
+      stage.classList.add("adding");
+      syncAddAreaBtn();
+      drawOverlay();
+    });
+    syncScaleTools();
+    document.getElementById("fitBtn").addEventListener("click", () => {
+      if (!scaleToolsOn()) return;
+      runWithUndo(applyFit);
+    });
+    document.getElementById("incBtn").addEventListener("click", () => {
+      if (!scaleToolsOn()) return;
+      runWithUndo(() => setScale(transform.scale * SCALE_STEP));
+    });
+    document.getElementById("decBtn").addEventListener("click", () => {
+      if (!scaleToolsOn()) return;
+      runWithUndo(() => setScale(transform.scale / SCALE_STEP));
+    });
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      if (!scaleToolsOn()) return;
+      runWithUndo(resetTransform);
+    });
+    document.getElementById("undoBtn").addEventListener("click", undoLast);
+    document.addEventListener("keydown", (event) => {
+      if (!overlayData) return;
+      if (!document.getElementById("areaDialog").classList.contains("hidden")) return;
+      if (!((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z")) return;
+      const tag = event.target && event.target.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      if (document.getElementById("aligner").classList.contains("hidden")) return;
+      event.preventDefault();
+      undoLast();
+    });
+
+    async function applyCurrentAlignment() {
+      if (!currentJob) throw new Error("Process the PDFs first.");
+      const applyBtn = document.getElementById("applyBtn");
+      applyBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/jobs/${currentJob}/align`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scale: transform.scale,
+            tx: transform.tx,
+            ty: transform.ty,
+            edits: collectEdits(),
+            added_areas: collectAddedAreas(),
+          }),
+        });
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.detail || "Could not apply alignment");
+        renderTable(payload.rows);
+        document.getElementById("downloads").innerHTML = downloadLinks(payload.downloads, payload.job_id || currentJob);
+        document.getElementById("applyOk").classList.remove("hidden");
+        return payload;
+      } finally {
+        applyBtn.disabled = false;
+      }
+    }
+
+    document.getElementById("applyBtn").addEventListener("click", async () => {
+      try {
+        await applyCurrentAlignment();
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    document.getElementById("downloads").addEventListener("click", async (event) => {
+      const link = event.target.closest("a");
+      if (!link || !currentJob) return;
+      const href = link.getAttribute("href") || "";
+      if (!href.includes("stamped.pdf") && !href.includes("stamped_names.pdf") && !href.includes("leaf_coordinates.csv") && !href.includes("coordinates.csv") && !href.includes("pdf_only_coordinates.csv") && !href.includes("same_name_locations.csv") && !href.includes("unmatched.csv") && !href.includes("leaf_network") && !href.includes("leaf_by_network") && !href.includes("bacnet_unmatched")) {
+        return;
+      }
+      event.preventDefault();
+      try {
+        showError("");
+        await applyCurrentAlignment();
+        window.location.href = href.split("?")[0] + "?t=" + Date.now();
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    function downloadLinks(d, jobId) {
+      const t = Date.now();
+      const q = (url) => (url ? `${url}?t=${t}` : "");
+      const fromUrl = String(d?.leaf_coordinates_csv || "").match(/\/api\/jobs\/([^/]+)\//);
+      const id = jobId || currentJob || (fromUrl && fromUrl[1]) || "";
+      const networks = Object.entries(d.leaf_network_csvs || {}).map(([network, url]) =>
+        `<a class="btn" href="${q(url)}">Network ${network}.csv</a>`
+      ).join("");
+      const bacnet = d.bacnet_zip ? `
+        <div class="dl-group">
+          <span>BACnet</span>
+          <a class="btn" href="${q(d.bacnet_zip)}">leaf_by_network.zip</a>
+          <a class="btn" href="${q(d.bacnet_unmatched_csv)}">bacnet_unmatched.csv</a>
+          ${networks}
+        </div>
+      ` : "";
+      const cleanHref = id ? `/cleaner/?job_id=${encodeURIComponent(id)}` : "/cleaner/";
+      return `
+        <div class="dl-group">
+          <span>CSV</span>
+          <a class="btn" href="${q(d.coordinates_csv)}">coordinates.csv</a>
+          <a class="btn" href="${q(d.leaf_coordinates_csv)}">leaf_coordinates.csv</a>
+          <a class="btn" href="${q(d.coordinates_json)}">coordinates.json</a>
+          <a class="btn" href="${q(d.unmatched_csv)}">leaf csv unmatched.csv</a>
+          <a class="btn" href="${q(d.pdf_only_csv)}">pdf_only_coordinates.csv</a>
+          <a class="btn" href="${q(d.same_name_locations_csv)}">same name locations.csv</a>
+        </div>
+        <div class="dl-group">
+          <span>Next step</span>
+          <a class="btn primary" href="${cleanHref}">Clean / fix these coordinates →</a>
+          <a class="btn" href="/cleaner/">Clean only (upload CSV yourself)</a>
+        </div>
+        <p style="margin:0;font-size:12px;color:var(--muted);">
+          Clean / fix loads this job’s leaf_coordinates.csv so you can remove extra points, add points, and review.
+          Use Clean only anytime you already have a CSV and do not need matching.
+        </p>
+        <div class="dl-group">
+          <span>PDF</span>
+          <a class="btn" href="${q(d.stamped_pdf)}">stamped.pdf</a>
+          <a class="btn" href="${q(d.stamped_names_pdf)}">stamped_names.pdf</a>
+        </div>
+        ${bacnet}
+      `;
+    }
+
+    document.getElementById("bacnetBtn").addEventListener("click", async () => {
+      const later = document.getElementById("bacnetLater");
+      if (!currentJob) {
+        showError("Process the PDFs first.");
+        return;
+      }
+      if (!later.files[0]) {
+        showError("Choose a BACnet ID report CSV first (Excel: Save As CSV).");
+        return;
+      }
+      try {
+        showError("");
+        await applyCurrentAlignment();
+        const data = new FormData();
+        data.append("bacnet_csv", later.files[0]);
+        const res = await fetch(`/api/jobs/${currentJob}/bacnet`, { method: "POST", body: data });
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.detail || "Could not split by network number");
+        document.getElementById("downloads").innerHTML = downloadLinks(payload.downloads, payload.job_id || currentJob);
+        document.getElementById("bacnetOk").classList.remove("hidden");
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    function renderTable(rows) {
+      document.getElementById("rows").innerHTML = rows.map(row => `
+        <tr>
+          <td>${row.csv_name || ""}</td>
+          <td>${row.code || ""}</td>
+          <td>${row.pdf_name || ""}</td>
+          <td class="status ${row.status}">${row.status}</td>
+          <td>${row.score || ""}</td>
+          <td>${row.page || ""}</td>
+          <td>${row.x0 ?? ""} ${row.y0 ?? ""} ${row.x1 ?? ""} ${row.y1 ?? ""}</td>
+          <td>${row.center_x ?? ""} ${row.center_y ?? ""}</td>
+        </tr>
+      `).join("");
+    }
+
+    function renderResult(payload) {
+      const s = payload.summary;
+      currentJob = payload.job_id || currentJob;
+      document.getElementById("resultPanel").classList.remove("hidden");
+      document.getElementById("stats").innerHTML = [
+        ["Labels", s.labels_found],
+        ["Polygons", s.polygons_found],
+        ["Matched", s.matched],
+        ["Unmatched", s.unmatched],
+        ["PDF only", s.pdf_only || 0],
+        ["CSV rows", s.csv_rows],
+        ["Networks", (s.bacnet_networks || []).length],
+      ].map(([label, value]) => `<div class="stat"><b>${value}</b><span>${label}</span></div>`).join("");
+
+      document.getElementById("downloads").innerHTML = downloadLinks(payload.downloads, payload.job_id);
+      document.getElementById("preview").classList.add("hidden");
+      setupAligner(payload);
+      renderTable(payload.rows);
+    }
+  </script>
+</body>
+</html>
