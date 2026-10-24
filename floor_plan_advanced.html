@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Floor Plan Coordinate Extractor — Transform Controls</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Segoe UI',Tahoma,Verdana,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px}
+        .container{max-width:1800px;margin:0 auto;background:white;border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.25);overflow:hidden}
+        .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:22px 20px;text-align:center}
+        .header h1{font-size:1.4rem;margin-bottom:6px}
+        .header p{font-size:.9rem;opacity:.95}
+        .main-content{display:grid;grid-template-columns:minmax(0,1fr) 380px;height:calc(100vh - 150px);min-height:420px;min-width:0}
+        .canvas-area{padding:14px;display:flex;flex-direction:column;background:#f8f9fa;min-width:0;min-height:0;overflow:hidden}
+        .controls{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+        .btn{padding:8px 12px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
+        .btn:disabled{opacity:.5;cursor:not-allowed}
+        .btn-primary{background:#667eea;color:#fff}.btn-success{background:#06d6a0;color:#fff}.btn-warning{background:#ffd166;color:#333}.btn-danger{background:#ef476f;color:#fff}.btn-info{background:#118ab2;color:#fff}.btn-secondary{background:#6c757d;color:#fff}
+        .file-input-wrapper{position:relative;overflow:hidden}
+        .file-input-wrapper input[type=file]{position:absolute;left:-9999px}
+        .canvas-wrapper{flex:1;position:relative;border:2px solid #ddd;border-radius:10px;overflow:auto;background:white;min-width:0;min-height:0}
+        .canvas-wrapper.edit-mode{border-color:#ffd166;box-shadow:0 0 0 3px rgba(255,209,102,.25)}
+        .canvas-stage{position:relative;min-width:100%;min-height:100%}
+        #pdfCanvas,#drawCanvas{position:absolute;top:0;left:0}
+        #drawCanvas{cursor:crosshair}
+        #drawCanvas.edit-mode{cursor:move}
+        .sidebar{background:white;border-left:2px solid #e0e0e0;padding:18px;overflow-y:auto}
+        .sidebar h2{font-size:1.1em;margin-bottom:12px;color:#333}
+        .room-input{margin-bottom:12px}
+        .room-input label{display:block;margin-bottom:5px;font-weight:600;color:#555}
+        .room-input input{width:100%;padding:8px;border:2px solid #e0e0e0;border-radius:8px;font-size:13px}
+        .rooms-list{margin-top:14px}
+        .room-item{background:#f8f9fa;padding:10px;border-radius:8px;margin-bottom:10px;border-left:4px solid #667eea}
+        .room-item.imported{border-left-color:#06d6a0;background:#f0fdf8}
+        .room-item.editing{border-left-color:#ffd166;background:#fffef0;box-shadow:0 4px 12px rgba(255,209,102,.25)}
+        .room-item h3{font-size:.95em;margin-bottom:6px;color:#333;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+        .badge{font-size:10px;padding:3px 8px;border-radius:12px;background:#06d6a0;color:#fff;font-weight:600}
+        .badge-edit{background:#ffd166;color:#333}
+        .room-item .coordinates{font-family:'Courier New',monospace;font-size:12px;color:#666;background:white;padding:8px;border-radius:5px;max-height:140px;overflow:auto;word-break:break-all}
+        .coordinate-editor{margin-top:10px}
+        .coordinate-point{display:flex;gap:8px;margin-bottom:8px;align-items:center}
+        .coordinate-point input{flex:1;padding:6px;border:1px solid #ddd;border-radius:4px;font-family:'Courier New',monospace}
+        .status-bar{padding:10px 14px;background:#f0f0f0;font-size:13px;color:#666;border-top:1px solid #ddd}
+        .status-bar.edit-mode{background:#fff9e6;border-top:2px solid #ffd166;color:#333;font-weight:600}
+        .empty-state{text-align:center;padding:40px 20px;color:#999}
+        .canvas-wrapper > .empty-state{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:100%}
+        .toggle-section{margin:12px 0;padding:12px;background:#f8f9fa;border-radius:8px}
+        .toggle-section label{display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:600;color:#555}
+        .overlay { position: absolute; left: 12px; top: 12px; background: rgba(0,0,0,0.6); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; z-index: 40; pointer-events: none; display:flex; gap:12px; align-items:center; }
+        .overlay .pdf-name { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .meta-input { width:100%; padding:6px; border:1px solid #ddd; border-radius:6px; margin-bottom:6px; font-size:13px; }
+        .transform-group { display:flex; gap:8px; align-items:flex-end; margin-left:auto; flex-wrap:wrap; }
+        .transform-field { display:flex; flex-direction:column; gap:2px; font-size:11px; font-weight:600; color:#555; }
+        .transform-field span { white-space:nowrap; }
+        .transform-input { width:78px; padding:6px; border-radius:6px; border:1px solid #ccc; text-align:center; font-size:13px; }
+        .transform-apply { background:#06d6a0; color:#fff; }
+        .transform-select { height:32px; border-radius:6px; border:1px solid #ccc; padding:0 6px; font-size:12px; font-weight:600; }
+        .lock-label { display:flex; align-items:center; gap:4px; font-size:11px; font-weight:600; color:#555; padding-bottom:6px; white-space:nowrap; }
+        @media (max-width:1200px){.main-content{grid-template-columns:1fr;height:auto}.sidebar{border-left:none;border-top:2px solid #e0e0e0}}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🏠 Floor Plan Coordinate Extractor</h1>
+        <p>Upload PDF + CSV, then Drag All / Scale / 2-Point Align to match the floor plan. Right-click a polygon to edit or delete.</p>
+    </div>
+
+    <div class="main-content">
+        <div class="canvas-area">
+            <div class="controls">
+                <div class="file-input-wrapper">
+                    <label for="pdfInput" class="btn btn-primary">📁 Upload PDF</label>
+                    <input type="file" id="pdfInput" accept=".pdf" />
+                </div>
+
+                <div class="file-input-wrapper">
+                    <label for="csvInput" class="btn btn-info">📊 Import CSV</label>
+                    <input type="file" id="csvInput" accept=".csv" />
+                </div>
+
+                <button id="finishPolygon" class="btn btn-success" disabled>✓ Finish Polygon</button>
+                <button id="undoPoint" class="btn btn-warning" disabled>↶ Undo Point</button>
+                <button id="clearCurrent" class="btn btn-danger" disabled>✕ Clear Current</button>
+                <button id="exportCSV" class="btn btn-primary" disabled>💾 Export CSV</button>
+
+                <button id="zoomOut" class="btn btn-secondary" title="Zoom Out">−</button>
+                <button id="zoomIn" class="btn btn-secondary" title="Zoom In">+</button>
+                <button id="fitWidth" class="btn btn-secondary" title="Fit to Width">Fit</button>
+
+                <label class="btn btn-secondary" style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" id="snapToGrid" style="width:16px;height:16px" /> Snap to grid
+                </label>
+
+                <label class="btn btn-secondary" style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" id="snapToVertices" checked style="width:16px;height:16px" /> Snap to vertices
+                </label>
+
+                <button id="dragAllBtn" class="btn btn-info" title="Drag all polygons together">🖱️ Drag All</button>
+                <button id="fitToPdfBtn" class="btn btn-secondary" title="Uniform-scale all rooms to fit the PDF page">Fit to PDF</button>
+                <button id="calibrateBtn" class="btn btn-secondary" title="Click 2 polygon corners, then 2 matching PDF points">2-Point Align</button>
+                <button id="resetTransformBtn" class="btn btn-warning" title="Restore imported coordinates">Reset Align</button>
+
+                <!-- Transform controls: scale around ALL rooms together, then offset -->
+                <div class="transform-group" title="Scale and move ALL polygons together to match the PDF">
+                    <label class="transform-field"><span>Scale X %</span><input id="scaleX" class="transform-input" type="number" value="100" step="0.1" title="Scale X (%)"></label>
+                    <label class="transform-field"><span>Scale Y %</span><input id="scaleY" class="transform-input" type="number" value="100" step="0.1" title="Scale Y (%)"></label>
+                    <label class="lock-label"><input type="checkbox" id="lockAspect" checked> Lock XY</label>
+                    <label class="transform-field"><span>Offset X</span><input id="moveX" class="transform-input" type="number" value="0" step="1" title="Move X (PDF units)"></label>
+                    <label class="transform-field"><span>Offset Y</span><input id="moveY" class="transform-input" type="number" value="0" step="1" title="Move Y (PDF units)"></label>
+                    <label class="transform-field"><span>Scale from</span>
+                        <select id="scaleOrigin" class="transform-select" title="Shared origin for scaling the whole layout">
+                            <option value="bbox" selected>All rooms top-left</option>
+                            <option value="center">All rooms center</option>
+                            <option value="origin">Page origin (0,0)</option>
+                        </select>
+                    </label>
+                    <button id="applyTransform" class="btn transform-apply" title="Bake current scale/offset into coordinates">Apply to All</button>
+                </div>
+            </div>
+
+            <div class="canvas-wrapper" id="canvasWrapper">
+                <div class="overlay" id="overlay" style="display:none">
+                    <div class="pdf-name" id="pdfName">No file</div>
+                    <div class="coords" id="overlayCoords">x: — , y: —</div>
+                </div>
+
+                <div class="empty-state" id="emptyState">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="80" height="80">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>
+                    <p>Upload a PDF to get started</p>
+                </div>
+
+                <div class="canvas-stage" id="canvasStage">
+                    <canvas id="pdfCanvas"></canvas>
+                    <canvas id="drawCanvas"></canvas>
+                </div>
+            </div>
+
+            <div class="status-bar" id="statusBar">Ready to upload PDF</div>
+        </div>
+
+        <div class="sidebar">
+            <h2>Room Details</h2>
+            <div class="room-input"><label for="roomName">Room Name</label><input id="roomName" placeholder="e.g., Living Room" /></div>
+            <div class="room-input"><label for="roomCode">Room Code (Optional)</label><input id="roomCode" placeholder="e.g., 983" /></div>
+
+            <div class="toggle-section"><label><input type="checkbox" id="showImported" checked /> Show Imported Rooms</label></div>
+            <div class="toggle-section"><label><input type="checkbox" id="showDrawn" checked /> Show Drawn Rooms</label></div>
+
+            <div class="rooms-list" id="roomsList">
+                <div class="empty-state"><p>No rooms yet. Draw on the PDF or import CSV.</p></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const state = {
+    pdfDoc: null,
+    pdfName: null,
+    pageNum: 1,
+    scale: 1.5,
+    points: [],            // points for new polygon (in PDF coords)
+    rooms: [],             // {name, code, points[], coordinates, imported, metadata}
+    isDrawing: false,
+    editingRoomIndex: null,
+    dragMode: null,        // "vertex" | "move" | "moveAll" | null
+    dragIndex: null,       // index of vertex
+    dragStart: null,       // {sx,sy, origPoints}
+    dragAllEnabled: false,
+    dragStartAll: null,
+    showImported: true,
+    showDrawn: true,
+    minScale: 0.4,
+    maxScale: 4.0,
+    isEditingMetadata: false,
+    xformSnapshot: null,   // point snapshot while previewing scale/offset
+    calibrate: null        // { step, src0, dst0, src1 }
+};
+
+/* DOM */
+const pdfInput = document.getElementById('pdfInput');
+const csvInput = document.getElementById('csvInput');
+const pdfCanvas = document.getElementById('pdfCanvas');
+const drawCanvas = document.getElementById('drawCanvas');
+const canvasWrapper = document.getElementById('canvasWrapper');
+const roomNameInput = document.getElementById('roomName');
+const roomCodeInput = document.getElementById('roomCode');
+const finishPolygonBtn = document.getElementById('finishPolygon');
+const undoPointBtn = document.getElementById('undoPoint');
+const clearCurrentBtn = document.getElementById('clearCurrent');
+const exportCSVBtn = document.getElementById('exportCSV');
+const roomsList = document.getElementById('roomsList');
+const statusBar = document.getElementById('statusBar');
+const emptyState = document.getElementById('emptyState');
+const showImportedCheckbox = document.getElementById('showImported');
+const showDrawnCheckbox = document.getElementById('showDrawn');
+const snapToGridCheckbox = document.getElementById('snapToGrid');
+const snapToVerticesCheckbox = document.getElementById('snapToVertices');
+
+const zoomInBtn = document.getElementById('zoomIn');
+const zoomOutBtn = document.getElementById('zoomOut');
+const fitWidthBtn = document.getElementById('fitWidth');
+const dragAllBtn = document.getElementById('dragAllBtn');
+
+const scaleXInput = document.getElementById('scaleX');
+const scaleYInput = document.getElementById('scaleY');
+const moveXInput = document.getElementById('moveX');
+const moveYInput = document.getElementById('moveY');
+const applyTransformBtn = document.getElementById('applyTransform');
+const lockAspectCheckbox = document.getElementById('lockAspect');
+const scaleOriginSelect = document.getElementById('scaleOrigin');
+const fitToPdfBtn = document.getElementById('fitToPdfBtn');
+const calibrateBtn = document.getElementById('calibrateBtn');
+const resetTransformBtn = document.getElementById('resetTransformBtn');
+const canvasStage = document.getElementById('canvasStage');
+
+const overlay = document.getElementById('overlay');
+const pdfNameEl = document.getElementById('pdfName');
+const overlayCoords = document.getElementById('overlayCoords');
+
+const pdfCtx = pdfCanvas.getContext('2d');
+const drawCtx = drawCanvas.getContext('2d');
+
+/* Helpers */
+function updateStatus(msg){ statusBar.textContent = msg; }
+function formatCoordinates(points){ return points.map(p => `${p.x}~${p.y}`).join(','); }
+function toScreen(pt){ return { x: Math.round(pt.x * state.scale), y: Math.round(pt.y * state.scale) }; }
+function toPdfCoords(screenX, screenY){
+    const rect = drawCanvas.getBoundingClientRect();
+    const x = Math.round((screenX - rect.left) / state.scale);
+    const y = Math.round((screenY - rect.top) / state.scale);
+    return { x, y };
+}
+function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+function csvCell(v){
+    const s=String(v??'');
+    if(/[",\n\r]/.test(s)) return '"'+s.replace(/"/g,'""')+'"';
+    return s;
+}
+function parseCsvRow(line){
+    const out=[]; let cur='', inQ=false;
+    for(let i=0;i<line.length;i++){
+        const c=line[i];
+        if(inQ){
+            if(c==='"'){ if(line[i+1]==='"'){ cur+='"'; i++; } else inQ=false; }
+            else cur+=c;
+        } else {
+            if(c==='"') inQ=true;
+            else if(c===','){ out.push(cur); cur=''; }
+            else cur+=c;
+        }
+    }
+    out.push(cur);
+    return out.map(s=>String(s||'').trim());
+}
+
+/* centroid helper (for scaling around centroid) */
+function polygonCentroid(points){
+    // returns centroid (cx, cy). robust for simple polygons.
+    let area = 0, cx = 0, cy = 0;
+    const n = points.length;
+    for (let i = 0; i < n; i++){
+        const p0 = points[i];
+        const p1 = points[(i+1)%n];
+        const a = p0.x * p1.y - p1.x * p0.y;
+        area += a;
+        cx += (p0.x + p1.x) * a;
+        cy += (p0.y + p1.y) * a;
+    }
+    if (Math.abs(area) < 1e-6){
+        // fallback: average of points
+        const avg = points.reduce((s,p)=>({x:s.x+p.x,y:s.y+p.y}),{x:0,y:0});
+        return { cx: avg.x / n, cy: avg.y / n };
+    }
+    area = area / 2;
+    cx = cx / (6 * area);
+    cy = cy / (6 * area);
+    return { cx, cy };
+}
+
+/* point in polygon */
+function pointInPolygon(x, y, polygon) {
+    if (!polygon || polygon.length < 3) return false;
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x, yi = polygon[i].y;
+        const xj = polygon[j].x, yj = polygon[j].y;
+        const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi + 0.0) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+/* PDF Rendering */
+pdfInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    updateStatus('Loading PDF...');
+    const reader = new FileReader();
+    reader.onload = async function() {
+        try {
+            const typed = new Uint8Array(this.result);
+            state.pdfDoc = await pdfjsLib.getDocument(typed).promise;
+            state.pdfName = file.name;
+            pdfNameEl.textContent = state.pdfName;
+            overlay.style.display = 'flex';
+            await renderPage(state.pageNum);
+            updateStatus(`PDF loaded (${pdfCanvas.width}×${pdfCanvas.height}). Click to start drawing or import CSV.`);
+            enableDrawing();
+            redrawAll();
+        } catch (err) {
+            updateStatus('Error loading PDF: ' + (err.message || err));
+        }
+    };
+    reader.readAsArrayBuffer(file);
+});
+
+async function renderPage(pageNum){
+    if(!state.pdfDoc) return;
+    const page = await state.pdfDoc.getPage(pageNum);
+    const viewport = page.getViewport({ scale: state.scale });
+    pdfCanvas.width = Math.round(viewport.width);
+    pdfCanvas.height = Math.round(viewport.height);
+    drawCanvas.width = pdfCanvas.width;
+    drawCanvas.height = pdfCanvas.height;
+    canvasStage.style.width = pdfCanvas.width + 'px';
+    canvasStage.style.height = pdfCanvas.height + 'px';
+    pdfCtx.clearRect(0,0,pdfCanvas.width,pdfCanvas.height);
+    await page.render({ canvasContext: pdfCtx, viewport }).promise;
+}
+
+/* Zoom controls */
+zoomInBtn.addEventListener('click', async () => {
+    const newScale = clamp(+ (state.scale * 1.2).toFixed(3), state.minScale, state.maxScale);
+    if (Math.abs(newScale - state.scale) < 1e-6) return;
+    state.scale = newScale;
+    if (state.pdfDoc){ await renderPage(state.pageNum); redrawAll(); updateStatus(`Zoom: ${Math.round(state.scale*100)}%`); }
+});
+zoomOutBtn.addEventListener('click', async () => {
+    const newScale = clamp(+ (state.scale / 1.2).toFixed(3), state.minScale, state.maxScale);
+    if (Math.abs(newScale - state.scale) < 1e-6) return;
+    state.scale = newScale;
+    if (state.pdfDoc){ await renderPage(state.pageNum); redrawAll(); updateStatus(`Zoom: ${Math.round(state.scale*100)}%`); }
+});
+fitWidthBtn.addEventListener('click', async () => {
+    if (!state.pdfDoc) return;
+    const page = await state.pdfDoc.getPage(state.pageNum);
+    const vp1 = page.getViewport({ scale: 1.0 });
+    const containerW = Math.max(canvasWrapper.clientWidth - 32, 200); // some padding
+    const desiredScale = containerW / vp1.width;
+    state.scale = clamp(+desiredScale.toFixed(3), state.minScale, state.maxScale);
+    await renderPage(state.pageNum);
+    redrawAll();
+    updateStatus(`Zoom: Fit (${Math.round(state.scale*100)}%)`);
+});
+
+/* CSV import */
+csvInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!state.pdfDoc) { alert('Upload PDF first'); csvInput.value=''; return; }
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+        parseAndImportCSV(ev.target.result);
+        csvInput.value='';
+    };
+    reader.readAsText(file);
+});
+
+function parseAndImportCSV(csv){
+    const rows = csv.split(/\r?\n/).filter(r=>r.trim());
+    if (rows.length < 2) { alert('CSV invalid'); return; }
+    let imported = 0, skipped = 0;
+    for (let i=1;i<rows.length;i++){
+        const cols = parseCsvRow(rows[i].replace(/^\uFEFF/,''));
+        if (cols.length < 6) { skipped++; continue; }
+        const processorId = cols[0], rootArea = cols[1], rootSubarea = cols[2], rootSubSub = cols[3], code = cols[4], name = cols[5];
+        const coords = [];
+        for (let j=6;j<cols.length;j++){
+            const v = cols[j].trim();
+            if (!v) continue;
+            if (!v.includes('~')) continue;
+            const [x,y] = v.split('~').map(s=>parseInt(s.trim()));
+            if (!isNaN(x) && !isNaN(y)) coords.push({x,y});
+        }
+        if (coords.length >= 3){
+            state.rooms.push({
+                name, code,
+                points: coords,
+                coordinates: formatCoordinates(coords),
+                imported: true,
+                metadata: { processorId, rootArea, rootSubarea, rootSubSub },
+                _importedPoints: JSON.parse(JSON.stringify(coords))
+            });
+            imported++;
+        } else skipped++;
+    }
+    state.xformSnapshot = null;
+    resetTransformInputs();
+    redrawAll(); updateRoomsList();
+    updateStatus(`Imported ${imported} rooms${skipped?` (${skipped} skipped)`:''}. Use Drag All / Scale / 2-Point Align to match the PDF.`);
+}
+
+/* Drawing primitives */
+function drawPointScreen(x,y,r=5,fill='#ef476f',stroke='#fff',line=2){
+    drawCtx.beginPath(); drawCtx.arc(x,y,r,0,Math.PI*2); drawCtx.fillStyle=fill; drawCtx.fill(); drawCtx.lineWidth=line; drawCtx.strokeStyle=stroke; drawCtx.stroke();
+}
+function drawLineScreen(x1,y1,x2,y2, color='#667eea', w=3){
+    drawCtx.beginPath(); drawCtx.moveTo(x1,y1); drawCtx.lineTo(x2,y2); drawCtx.strokeStyle=color; drawCtx.lineWidth=w; drawCtx.stroke();
+}
+
+/* Draw rooms */
+function drawNormalRoom(room){
+    if(room.points.length < 3) return;
+    drawCtx.save();
+    const fillColor = room.imported ? 'rgba(6,214,160,0.18)' : 'rgba(102,126,234,0.15)';
+    const stroke = room.imported ? '#06d6a0' : '#667eea';
+    drawCtx.beginPath();
+    drawCtx.moveTo(room.points[0].x*state.scale, room.points[0].y*state.scale);
+    for (let i=1;i<room.points.length;i++) drawCtx.lineTo(room.points[i].x*state.scale, room.points[i].y*state.scale);
+    drawCtx.closePath(); drawCtx.fillStyle=fillColor; drawCtx.fill();
+    drawCtx.strokeStyle=stroke; drawCtx.lineWidth=3; drawCtx.stroke();
+    drawCtx.restore();
+}
+function drawEditableRoom(room){
+    if(room.points.length < 3) return;
+    drawCtx.save();
+    drawCtx.beginPath();
+    drawCtx.moveTo(room.points[0].x*state.scale, room.points[0].y*state.scale);
+    for (let i=1;i<room.points.length;i++) drawCtx.lineTo(room.points[i].x*state.scale, room.points[i].y*state.scale);
+    drawCtx.closePath();
+    drawCtx.fillStyle='rgba(255,209,102,0.25)'; drawCtx.fill();
+    drawCtx.strokeStyle='#ffd166'; drawCtx.lineWidth=4; drawCtx.stroke();
+    for (let i=0;i<room.points.length;i++){
+        const s = toScreen(room.points[i]);
+        drawPointScreen(s.x, s.y, 6, '#ffd166', '#333', 3);
+    }
+    drawCtx.restore();
+}
+
+/* Redraw everything */
+function redrawAll(){
+    drawCtx.clearRect(0,0,drawCanvas.width, drawCanvas.height);
+    for (let i=0;i<state.rooms.length;i++){
+        const room = state.rooms[i];
+        if (room.imported && !state.showImported && i !== state.editingRoomIndex) continue;
+        if (!room.imported && !state.showDrawn && i !== state.editingRoomIndex) continue;
+        if (i === state.editingRoomIndex) drawEditableRoom(room); else drawNormalRoom(room);
+    }
+    for (let i=0;i<state.points.length;i++){
+        const s = toScreen(state.points[i]);
+        drawPointScreen(s.x, s.y, 5, '#ef476f', '#fff', 2);
+        if (i > 0){
+            const p1 = toScreen(state.points[i-1]), p2 = toScreen(state.points[i]);
+            drawLineScreen(p1.x,p1.y,p2.x,p2.y);
+        }
+    }
+}
+
+/* Drawing interactions */
+function enableDrawing(){
+    state.isDrawing = true;
+    finishPolygonBtn.disabled = false;
+    clearCurrentBtn.disabled = false;
+    exportCSVBtn.disabled = state.rooms.length === 0;
+    emptyState.style.display = 'none';
+    overlay.style.display = state.pdfName ? 'flex' : overlay.style.display;
+}
+
+drawCanvas.addEventListener('click', (ev) => {
+    if (state.calibrate){
+        handleCalibrateClick(ev);
+        return;
+    }
+    if (state.dragAllEnabled) return; // when Drag All active, clicks shouldn't create points
+    if (state.isEditingMetadata) return;
+    if (state.editingRoomIndex !== null) return;
+    if (!state.isDrawing) return;
+    const rect = drawCanvas.getBoundingClientRect();
+    let { x: pdfX, y: pdfY } = toPdfCoords(ev.clientX, ev.clientY);
+    
+    // Snap to vertical/horizontal alignment if close to ANY existing point
+    if (state.points.length > 0){
+        const threshold = 8;
+        let snappedX = false, snappedY = false;
+        
+        // Check against all existing points for alignment
+        for (const point of state.points){
+            // Snap to vertical (same X coordinate)
+            if (!snappedX && Math.abs(pdfX - point.x) <= threshold){
+                pdfX = point.x;
+                snappedX = true;
+            }
+            
+            // Snap to horizontal (same Y coordinate)
+            if (!snappedY && Math.abs(pdfY - point.y) <= threshold){
+                pdfY = point.y;
+                snappedY = true;
+            }
+            
+            // If both snapped, no need to check further
+            if (snappedX && snappedY) break;
+        }
+    }
+    
+    if (snapToGridCheckbox.checked){
+        const g = 5; pdfX = Math.round(pdfX / g) * g; pdfY = Math.round(pdfY / g) * g;
+    }
+    if (snapToVerticesCheckbox.checked){
+        for (const r of state.rooms){
+            for (const p of r.points){
+                if (Math.abs(p.x - pdfX) <= 4) pdfX = p.x;
+                if (Math.abs(p.y - pdfY) <= 4) pdfY = p.y;
+            }
+        }
+    }
+    state.points.push({ x: pdfX, y: pdfY });
+    undoPointBtn.disabled = state.points.length === 0;
+    redrawAll();
+});
+
+/* Right click handler: show context menu for polygon deletion or edit */
+drawCanvas.addEventListener('contextmenu', (ev) => {
+    ev.preventDefault();
+    if (!state.pdfDoc) return;
+    if (state.isEditingMetadata) return;
+    const rect = drawCanvas.getBoundingClientRect();
+    const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+    const pdfPos = { x: Math.round(sx / state.scale), y: Math.round(sy / state.scale) };
+    for (let i = state.rooms.length - 1; i >= 0; i--){
+        const room = state.rooms[i];
+        if (pointInPolygon(pdfPos.x, pdfPos.y, room.points)){
+            const action = confirm(`"${room.name}" - What would you like to do?\n\nClick OK to DELETE this polygon\nClick Cancel to EDIT this polygon`);
+            if (action){
+                // User clicked OK - Delete
+                deleteRoom(i);
+            } else {
+                // User clicked Cancel - Edit
+                editRoom(i);
+                setTimeout(()=> {
+                    const roomElements = document.querySelectorAll('.room-item');
+                    if (roomElements[i]) roomElements[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 120);
+            }
+            return;
+        }
+    }
+});
+
+/* overlay coords while moving mouse */
+drawCanvas.addEventListener('mousemove', (ev) => {
+    if (!state.pdfDoc){ overlayCoords.textContent = `x: — , y: —`; return; }
+    if (state.isEditingMetadata) return;
+    const rect = drawCanvas.getBoundingClientRect();
+    const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+    if (sx < 0 || sy < 0 || sx > drawCanvas.width || sy > drawCanvas.height){
+        overlayCoords.textContent = `x: — , y: —`;
+    } else {
+        const pdfPos = toPdfCoords(ev.clientX, ev.clientY);
+        overlayCoords.textContent = `x: ${pdfPos.x}, y: ${pdfPos.y}`;
+    }
+
+    if (state.dragAllEnabled){
+        if (state.dragMode !== 'moveAll') drawCanvas.style.cursor = 'grab';
+        return;
+    }
+
+    if (state.editingRoomIndex === null){
+        let hover = false;
+        for (const room of state.rooms){
+            for (const p of room.points){
+                const s = toScreen(p);
+                if (Math.abs(s.x - sx) <= 8 && Math.abs(s.y - sy) <= 8){ hover = true; break; }
+            }
+            if (hover) break;
+        }
+        drawCanvas.style.cursor = hover ? 'grab' : 'crosshair';
+        
+        // Show alignment guides while drawing - check against ALL points
+        if (state.isDrawing && state.points.length > 0){
+            redrawAll(); // Clear previous guides
+            const pdfPos = toPdfCoords(ev.clientX, ev.clientY);
+            const threshold = 8; // pixels threshold for snapping
+            
+            let verticalAligned = [];
+            let horizontalAligned = [];
+            
+            // Check alignment with ALL existing points
+            for (let i = 0; i < state.points.length; i++){
+                const point = state.points[i];
+                
+                // Check for vertical alignment (same X)
+                if (Math.abs(pdfPos.x - point.x) <= threshold){
+                    verticalAligned.push(point);
+                }
+                
+                // Check for horizontal alignment (same Y)
+                if (Math.abs(pdfPos.y - point.y) <= threshold){
+                    horizontalAligned.push(point);
+                }
+            }
+            
+            // Draw vertical guides for all aligned points
+            if (verticalAligned.length > 0){
+                drawCtx.save();
+                drawCtx.strokeStyle = '#ff6b6b';
+                drawCtx.lineWidth = 2;
+                drawCtx.setLineDash([8, 4]);
+                
+                for (const point of verticalAligned){
+                    const screenPoint = toScreen(point);
+                    drawCtx.beginPath();
+                    drawCtx.moveTo(screenPoint.x, 0);
+                    drawCtx.lineTo(screenPoint.x, drawCanvas.height);
+                    drawCtx.stroke();
+                    
+                    // Draw marker at the aligned point
+                    drawPointScreen(screenPoint.x, screenPoint.y, 8, 'rgba(255, 107, 107, 0.3)', '#ff6b6b', 2);
+                }
+                
+                // Show indicator text
+                drawCtx.setLineDash([]);
+                drawCtx.fillStyle = '#ff6b6b';
+                drawCtx.font = 'bold 13px Arial';
+                drawCtx.fillText(`VERTICAL (${verticalAligned.length} point${verticalAligned.length > 1 ? 's' : ''})`, toScreen(verticalAligned[0]).x + 5, 20);
+                drawCtx.restore();
+            }
+            
+            // Draw horizontal guides for all aligned points
+            if (horizontalAligned.length > 0){
+                drawCtx.save();
+                drawCtx.strokeStyle = '#06d6a0';
+                drawCtx.lineWidth = 2;
+                drawCtx.setLineDash([8, 4]);
+                
+                for (const point of horizontalAligned){
+                    const screenPoint = toScreen(point);
+                    drawCtx.beginPath();
+                    drawCtx.moveTo(0, screenPoint.y);
+                    drawCtx.lineTo(drawCanvas.width, screenPoint.y);
+                    drawCtx.stroke();
+                    
+                    // Draw marker at the aligned point
+                    drawPointScreen(screenPoint.x, screenPoint.y, 8, 'rgba(6, 214, 160, 0.3)', '#06d6a0', 2);
+                }
+                
+                // Show indicator text
+                drawCtx.setLineDash([]);
+                drawCtx.fillStyle = '#06d6a0';
+                drawCtx.font = 'bold 13px Arial';
+                drawCtx.fillText(`HORIZONTAL (${horizontalAligned.length} point${horizontalAligned.length > 1 ? 's' : ''})`, 10, toScreen(horizontalAligned[0]).y - 5);
+                drawCtx.restore();
+            }
+            
+            // Preview line from last point to current mouse position
+            const lastPoint = state.points[state.points.length - 1];
+            const screenCurrent = toScreen(pdfPos);
+            const screenLast = toScreen(lastPoint);
+            drawCtx.save();
+            drawCtx.strokeStyle = 'rgba(102, 126, 234, 0.5)';
+            drawCtx.lineWidth = 2;
+            drawCtx.setLineDash([6, 4]);
+            drawCtx.beginPath();
+            drawCtx.moveTo(screenLast.x, screenLast.y);
+            drawCtx.lineTo(screenCurrent.x, screenCurrent.y);
+            drawCtx.stroke();
+            drawCtx.restore();
+            
+            // Show cursor preview point
+            drawPointScreen(screenCurrent.x, screenCurrent.y, 4, 'rgba(102, 126, 234, 0.4)', '#667eea', 2);
+        }
+    }
+});
+
+/* Finish / Undo / Clear */
+finishPolygonBtn.addEventListener('click', () => {
+    if (state.points.length < 3){ alert('Add at least 3 points'); return; }
+    const name = (roomNameInput.value || `Room ${state.rooms.length+1}`).trim();
+    const code = (roomCodeInput.value || '').trim();
+    const room = { name, code, points: JSON.parse(JSON.stringify(state.points)), coordinates: formatCoordinates(state.points), imported: false, metadata: {} };
+    state.rooms.push(room);
+    state.points = [];
+    state.xformSnapshot = null;
+    updateRoomsList(); redrawAll();
+    updateStatus(`Room "${name}" added`);
+    roomNameInput.value = ''; roomCodeInput.value = '';
+});
+undoPointBtn.addEventListener('click', () => {
+    if (state.points.length) state.points.pop();
+    undoPointBtn.disabled = state.points.length === 0;
+    redrawAll();
+});
+clearCurrentBtn.addEventListener('click', () => {
+    state.points = []; undoPointBtn.disabled = true; redrawAll(); updateStatus('Current drawing cleared');
+});
+
+/* CSV Export — always writes the CURRENT (scaled / offset / dragged) coordinates */
+exportCSVBtn.addEventListener('click', ()=> {
+    if (state.rooms.length === 0){ alert('No rooms'); return; }
+    commitTransformPreview(true);
+    const maxCoords = Math.max(...state.rooms.map(r=>r.points.length));
+    let csv = 'processor_id,root_area,root_subarea,root_sub_subarea,code,name';
+    for (let i=0;i<maxCoords;i++) csv += ',';
+    csv += '\n';
+    state.rooms.forEach((room, idx) => {
+        const processorId = room.metadata?.processorId || '1';
+        const rootArea = room.metadata?.rootArea || 'SLV Diya';
+        const rootSubarea = room.metadata?.rootSubarea || 'Floor 4';
+        const rootSubSub = room.metadata?.rootSubSubarea || '402';
+        csv += `${csvCell(processorId)},${csvCell(rootArea)},${csvCell(rootSubarea)},${csvCell(rootSubSub)},${csvCell(room.code || (900+idx))},${csvCell(room.name)}`;
+        room.points.forEach(pt => csv += `,${pt.x}~${pt.y}`);
+        const remaining = maxCoords - room.points.length;
+        for (let i=0;i<remaining;i++) csv += ',';
+        csv += '\n';
+    });
+    const BOM = '\uFEFF'; const blob = new Blob([BOM+csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'floor_plan_coordinates.csv'; a.click(); URL.revokeObjectURL(url);
+    updateStatus('CSV exported with adjusted coordinates (scale / offset / drag included)');
+});
+
+/* Rooms list UI */
+function updateRoomsList(){
+    exportCSVBtn.disabled = state.rooms.length === 0;
+    if (state.rooms.length === 0){
+        roomsList.innerHTML = '<div class="empty-state"><p>No rooms yet. Draw or import CSV.</p></div>';
+        return;
+    }
+    roomsList.innerHTML = state.rooms.map((room, idx) => {
+        const editing = state.editingRoomIndex === idx;
+        return `<div class="room-item ${room.imported?'imported':''} ${editing?'editing':''}">
+            <h3>${room.name} ${room.code?`(${room.code})`:''} ${room.imported?'<span class="badge">IMPORTED</span>':''} ${editing?'<span class="badge badge-edit">EDITING</span>':''}</h3>
+            ${editing?generateCoordinateEditor(idx):`<div class="coordinates">${formatCoordinates(room.points)}</div>`}
+            <div class="actions" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+                ${editing?`<button class="btn btn-success" onclick="saveEdit(${idx})">💾 Save</button><button class="btn btn-secondary" onclick="cancelEdit(${idx})">✕ Cancel</button>`:
+                `<button class="btn btn-warning" onclick="editRoom(${idx})">✏️ Edit</button><button class="btn btn-info" onclick="highlightRoom(${idx})">👁️ Highlight</button><button class="btn btn-danger" onclick="deleteRoom(${idx})">🗑️ Delete</button>`}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function generateCoordinateEditor(roomIndex){
+    const room = state.rooms[roomIndex];
+    let html = '<div class="coordinate-editor">';
+    html += `<input id="meta-name-${roomIndex}" class="meta-input" placeholder="Room Name" value="${escapeHtml(room.name||'')}" onfocus="metadataFocus(${roomIndex})" onblur="metadataBlur(${roomIndex})" onkeydown="metadataKeydown(event,${roomIndex})" />`;
+    html += `<input id="meta-code-${roomIndex}" class="meta-input" placeholder="Room Code (optional)" value="${escapeHtml(room.code||'')}" onfocus="metadataFocus(${roomIndex})" onblur="metadataBlur(${roomIndex})" onkeydown="metadataKeydown(event,${roomIndex})" />`;
+    room.points.forEach((pt, i) => {
+        html += `<div class="coordinate-point"><input type="number" value="${pt.x}" onchange="updatePointFromInput(${roomIndex},${i},'x',this.value)"><input type="number" value="${pt.y}" onchange="updatePointFromInput(${roomIndex},${i},'y',this.value)"><button class="btn btn-danger" onclick="deletePoint(${roomIndex},${i})">✕</button></div>`;
+    });
+    html += `<button class="btn btn-primary" onclick="addPoint(${roomIndex})" style="margin-top:8px;">+ Add Point</button></div>`;
+    html += `<div style="margin-top:8px;"><button class="btn btn-info" onclick="enableMoveAll(${roomIndex})">🖱️ Drag all coordinates together</button></div>`;
+    return html;
+}
+
+/* escape helper */
+function escapeHtml(str){
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* Metadata helpers */
+function metadataFocus(roomIndex){ state.isEditingMetadata = true; }
+function metadataBlur(roomIndex){
+    const nameEl = document.getElementById(`meta-name-${roomIndex}`);
+    const codeEl = document.getElementById(`meta-code-${roomIndex}`);
+    if (!nameEl || !codeEl) { state.isEditingMetadata = false; return; }
+    commitMetadata(roomIndex, nameEl.value.trim(), codeEl.value.trim());
+    state.isEditingMetadata = false;
+}
+function metadataKeydown(ev, roomIndex){
+    if (ev.key === 'Enter'){
+        ev.preventDefault();
+        const nameEl = document.getElementById(`meta-name-${roomIndex}`);
+        const codeEl = document.getElementById(`meta-code-${roomIndex}`);
+        commitMetadata(roomIndex, nameEl.value.trim(), codeEl.value.trim());
+        if (document.activeElement) document.activeElement.blur();
+    } else if (ev.key === 'Escape'){
+        const room = state.rooms[roomIndex];
+        const nameEl = document.getElementById(`meta-name-${roomIndex}`);
+        const codeEl = document.getElementById(`meta-code-${roomIndex}`);
+        if (nameEl) nameEl.value = room.name || '';
+        if (codeEl) codeEl.value = room.code || '';
+        if (document.activeElement) document.activeElement.blur();
+    }
+}
+function commitMetadata(roomIndex, name, code){
+    const room = state.rooms[roomIndex];
+    if (!room) return;
+    let changed = false;
+    if ((room.name || '') !== (name || '')) { room.name = name; changed = true; }
+    if ((room.code || '') !== (code || '')) { room.code = code; changed = true; }
+    if (changed){
+        room.coordinates = formatCoordinates(room.points);
+        updateRoomsList();
+        updateStatus(`Metadata saved for "${room.name || 'Room'}"`);
+    } else {
+        updateStatus('No change to metadata');
+    }
+}
+
+/* Edit / Save / Cancel / Delete / Highlight */
+function editRoom(index){
+    if (state.editingRoomIndex !== null){ alert('Save or cancel current edit'); return; }
+    state.rooms[index]._originalPoints = JSON.parse(JSON.stringify(state.rooms[index].points));
+    state.editingRoomIndex = index; state.isDrawing = false;
+    state.dragAllEnabled = false; refreshDragAllButton();
+    canvasWrapper.classList.add('edit-mode'); drawCanvas.classList.add('edit-mode'); statusBar.classList.add('edit-mode');
+    finishPolygonBtn.disabled = true; undoPointBtn.disabled = true; clearCurrentBtn.disabled = true;
+    updateRoomsList(); redrawAll(); updateStatus('EDIT MODE: Drag vertices or move polygon. Save when done.');
+}
+
+function saveEdit(index){
+    const room = state.rooms[index];
+    if (room.points.length < 3){ alert('A room must have at least 3 points'); return; }
+    delete room._originalPoints; room.coordinates = formatCoordinates(room.points);
+    state.editingRoomIndex = null; state.isDrawing = true;
+    canvasWrapper.classList.remove('edit-mode'); drawCanvas.classList.remove('edit-mode'); statusBar.classList.remove('edit-mode');
+    finishPolygonBtn.disabled = false; clearCurrentBtn.disabled = false;
+    updateRoomsList(); redrawAll(); updateStatus(`Saved: ${room.name}`);
+}
+
+function cancelEdit(index){
+    const room = state.rooms[index];
+    if (room._originalPoints){ room.points = room._originalPoints; delete room._originalPoints; room.coordinates = formatCoordinates(room.points); }
+    state.editingRoomIndex = null; state.isDrawing = true;
+    canvasWrapper.classList.remove('edit-mode'); drawCanvas.classList.remove('edit-mode'); statusBar.classList.remove('edit-mode');
+    finishPolygonBtn.disabled = false; clearCurrentBtn.disabled = false;
+    updateRoomsList(); redrawAll(); updateStatus('Edit cancelled');
+}
+
+function deleteRoom(index){
+    if (!confirm(`Delete "${state.rooms[index].name}"?`)) return;
+    if (state.editingRoomIndex === index){
+        state.editingRoomIndex = null;
+        canvasWrapper.classList.remove('edit-mode'); drawCanvas.classList.remove('edit-mode'); statusBar.classList.remove('edit-mode');
+    }
+    state.rooms.splice(index,1);
+    state.xformSnapshot = null;
+    updateRoomsList(); redrawAll(); updateStatus('Room deleted');
+}
+
+function highlightRoom(index){
+    redrawAll();
+    const room = state.rooms[index];
+    if (room.points.length < 3) return;
+    drawCtx.save();
+    drawCtx.beginPath(); drawCtx.moveTo(room.points[0].x*state.scale,room.points[0].y*state.scale);
+    for (let i=1;i<room.points.length;i++) drawCtx.lineTo(room.points[i].x*state.scale,room.points[i].y*state.scale);
+    drawCtx.closePath();
+    drawCtx.strokeStyle='#ff6b6b'; drawCtx.lineWidth=6; drawCtx.setLineDash([12,6]); drawCtx.stroke();
+    drawCtx.restore();
+    updateStatus(`Highlighted ${room.name}`);
+    setTimeout(()=>{ redrawAll(); updateStatus('Ready'); }, 1400);
+}
+
+/* Edit helpers from UI */
+function updatePointFromInput(roomIndex, pointIndex, coord, value){
+    const room = state.rooms[roomIndex]; const n = parseInt(value);
+    if (isNaN(n)){ alert('Enter valid number'); return; }
+    room.points[pointIndex][coord] = n; room.coordinates = formatCoordinates(room.points); redrawAll(); updateStatus('Coordinate updated');
+}
+function deletePoint(roomIndex, pointIndex){
+    const room = state.rooms[roomIndex];
+    if (room.points.length <= 3){ alert('Room must have at least 3 points'); return; }
+    if (!confirm(`Delete point ${pointIndex+1}?`)) return;
+    room.points.splice(pointIndex,1); updateRoomsList(); redrawAll(); updateStatus('Point deleted');
+}
+function addPoint(roomIndex){
+    const room = state.rooms[roomIndex];
+    const avgX = Math.round(room.points.reduce((s,p)=>s+p.x,0)/room.points.length);
+    const avgY = Math.round(room.points.reduce((s,p)=>s+p.y,0)/room.points.length);
+    room.points.push({ x: avgX, y: avgY }); updateRoomsList(); redrawAll(); updateStatus(`New point added at ${avgX},${avgY}`);
+}
+function enableMoveAll(roomIndex){
+    editRoom(roomIndex);
+    updateStatus('EDIT MODE: Drag anywhere inside polygon to move all coordinates together.');
+}
+
+/* Dragging (vertex & move polygon & move all) - preserves smooth editing */
+drawCanvas.addEventListener('mousedown', (ev) => {
+    if (state.isEditingMetadata) return;
+    const rect = drawCanvas.getBoundingClientRect();
+    const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+
+    // If global Drag All mode is active -> start moving all rooms
+    if (state.dragAllEnabled){
+        commitTransformPreview(false);
+        const origRooms = state.rooms.map(r => ({ points: JSON.parse(JSON.stringify(r.points)) }));
+        state.dragMode = 'moveAll';
+        state.dragStartAll = { sx, sy, origRooms };
+        drawCanvas.style.cursor = 'grabbing';
+        if (typeof ev.pointerId === 'number') {
+            try { drawCanvas.setPointerCapture(ev.pointerId); } catch (_) {}
+        }
+        updateStatus('Dragging all polygons...');
+        return;
+    }
+
+    // Only allow per-room dragging when a room is in edit mode
+    if (state.editingRoomIndex === null) return;
+    const room = state.rooms[state.editingRoomIndex];
+    const hitRadius = 8;
+
+    // vertex hit test
+    for (let i=0;i<room.points.length;i++){
+        const s = toScreen(room.points[i]);
+        if (Math.abs(s.x - sx) <= hitRadius && Math.abs(s.y - sy) <= hitRadius){
+            state.dragMode = 'vertex'; state.dragIndex = i; drawCanvas.style.cursor = 'grabbing';
+            return;
+        }
+    }
+
+    // If click is inside polygon -> move whole polygon (drag single polygon)
+    const pdfX = Math.round(sx / state.scale), pdfY = Math.round(sy / state.scale);
+    if (pointInPolygon(pdfX, pdfY, room.points)){
+        state.dragMode = 'move';
+        state.dragStart = { sx, sy, origPoints: JSON.parse(JSON.stringify(room.points)) };
+        drawCanvas.style.cursor = 'grabbing';
+        return;
+    }
+});
+
+drawCanvas.addEventListener('mousemove', (ev) => {
+    if (state.isEditingMetadata) return;
+    const rect = drawCanvas.getBoundingClientRect();
+    const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+
+    // If global drag is active and currently dragging
+    if (state.dragMode === 'moveAll' && state.dragStartAll){
+        const dx = (sx - state.dragStartAll.sx) / state.scale;
+        const dy = (sy - state.dragStartAll.sy) / state.scale;
+        for (let rIdx = 0; rIdx < state.rooms.length; rIdx++){
+            const orig = state.dragStartAll.origRooms[rIdx];
+            if (!orig || !orig.points) continue;
+            const newPoints = [];
+            for (let pIdx = 0; pIdx < orig.points.length; pIdx++){
+                const op = orig.points[pIdx];
+                newPoints[pIdx] = { x: Math.round(op.x + dx), y: Math.round(op.y + dy) };
+            }
+            state.rooms[rIdx].points = newPoints;
+            state.rooms[rIdx].coordinates = formatCoordinates(state.rooms[rIdx].points);
+        }
+        redrawAll();
+        updateStatus(`Moving all polygons (${Math.round(dx)}, ${Math.round(dy)})`);
+        return;
+    }
+
+    // If not editing and dragAll not on, show hover effect
+    if (!state.dragAllEnabled && state.editingRoomIndex === null){
+        let hover = false;
+        for (const room of state.rooms){
+            for (const p of room.points){
+                const s = toScreen(p);
+                if (Math.abs(s.x - sx) <= 8 && Math.abs(s.y - sy) <= 8){ hover = true; break; }
+            }
+            if (hover) break;
+        }
+        drawCanvas.style.cursor = hover ? 'grab' : 'crosshair';
+        return;
+    }
+
+    // Per-room vertex dragging
+    if (state.editingRoomIndex !== null){
+        const room = state.rooms[state.editingRoomIndex];
+
+        if (state.dragMode === 'vertex' && state.dragIndex !== null){
+            let pdf = toPdfCoords(ev.clientX, ev.clientY);
+            if (snapToGridCheckbox.checked){ const g=5; pdf.x = Math.round(pdf.x/g)*g; pdf.y = Math.round(pdf.y/g)*g; }
+            if (snapToVerticesCheckbox.checked){
+                for (const r of state.rooms){
+                    for (const p of r.points){
+                        if (Math.abs(p.x - pdf.x) <= 4) pdf.x = p.x;
+                        if (Math.abs(p.y - pdf.y) <= 4) pdf.y = p.y;
+                    }
+                }
+            }
+            room.points[state.dragIndex] = { x: pdf.x, y: pdf.y };
+            room.coordinates = formatCoordinates(room.points);
+            redrawAll(); updateStatus(`Dragging vertex ${state.dragIndex+1} to (${pdf.x},${pdf.y})`);
+            return;
+        }
+
+        if (state.dragMode === 'move' && state.dragStart){
+            const dx = (sx - state.dragStart.sx) / state.scale;
+            const dy = (sy - state.dragStart.sy) / state.scale;
+            for (let i=0;i<room.points.length;i++){
+                room.points[i].x = Math.round(state.dragStart.origPoints[i].x + dx);
+                room.points[i].y = Math.round(state.dragStart.origPoints[i].y + dy);
+            }
+            room.coordinates = formatCoordinates(room.points);
+            redrawAll(); updateStatus(`Moving polygon (${Math.round(dx)}, ${Math.round(dy)})`);
+            return;
+        }
+    }
+});
+
+drawCanvas.addEventListener('mouseup', () => {
+    if (state.dragMode) {
+        state.dragMode = null; state.dragIndex = null; state.dragStart = null;
+        state.dragStartAll = null;
+        if (state.dragAllEnabled){
+            drawCanvas.style.cursor = 'grab';
+            updateStatus('Drag All mode: Ready (release to continue dragging all)');
+        } else {
+            drawCanvas.style.cursor = 'grab';
+            updateStatus('Edit updated');
+        }
+    }
+});
+
+drawCanvas.addEventListener('mouseleave', () => {
+    // Keep Drag All going if the pointer is captured; only cancel single-room edits.
+    if (state.dragMode === 'moveAll') return;
+    if (state.dragMode){
+        state.dragMode = null; state.dragIndex = null; state.dragStart = null; state.dragStartAll = null;
+        drawCanvas.style.cursor = state.dragAllEnabled ? 'grab' : 'default';
+        updateStatus('Edit cancelled (mouse left canvas)');
+        redrawAll();
+    }
+});
+
+/* Toggle visibility */
+showImportedCheckbox.addEventListener('change', e => { state.showImported = e.target.checked; redrawAll(); updateStatus(`Imported rooms ${state.showImported?'shown':'hidden'}`); });
+showDrawnCheckbox.addEventListener('change', e => { state.showDrawn = e.target.checked; redrawAll(); updateStatus(`Drawn rooms ${state.showDrawn?'shown':'hidden'}`); });
+
+/* Expose functions globally for inline onclick handlers */
+window.deleteRoom = deleteRoom;
+window.highlightRoom = highlightRoom;
+window.editRoom = editRoom;
+window.saveEdit = saveEdit;
+window.cancelEdit = cancelEdit;
+window.updatePointFromInput = updatePointFromInput;
+window.deletePoint = deletePoint;
+window.addPoint = addPoint;
+window.enableMoveAll = enableMoveAll;
+window.metadataFocus = metadataFocus;
+window.metadataBlur = metadataBlur;
+window.metadataKeydown = metadataKeydown;
+
+/* Drag All toggle */
+function refreshDragAllButton(){
+    if (state.dragAllEnabled){
+        dragAllBtn.textContent = '🖱️ Drag All (ON)';
+        dragAllBtn.classList.add('btn-success');
+        dragAllBtn.classList.remove('btn-info');
+        if (state.editingRoomIndex !== null) cancelEdit(state.editingRoomIndex);
+        drawCanvas.style.cursor = 'grab';
+        updateStatus('Drag All enabled — click & drag anywhere to move all polygons');
+    } else {
+        dragAllBtn.textContent = '🖱️ Drag All';
+        dragAllBtn.classList.add('btn-info');
+        dragAllBtn.classList.remove('btn-success');
+        drawCanvas.style.cursor = 'crosshair';
+        updateStatus('Drag All disabled');
+    }
+}
+dragAllBtn.addEventListener('click', () => {
+    state.dragAllEnabled = !state.dragAllEnabled;
+    state.dragMode = null; state.dragIndex = null; state.dragStart = null; state.dragStartAll = null;
+    refreshDragAllButton();
+});
+
+/* ---------- Align all rooms to the PDF (shared origin, not per-room) ---------- */
+function cloneRoomPoints(rooms){
+    return rooms.map(r => (r.points || []).map(p => ({ x: p.x, y: p.y })));
+}
+function allPointsFrom(pointSets){
+    const out = [];
+    for (const pts of pointSets){
+        for (const p of pts) out.push(p);
+    }
+    return out;
+}
+function boundingBox(points){
+    if (!points.length) return { minX:0, minY:0, maxX:0, maxY:0, cx:0, cy:0, w:0, h:0 };
+    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    for (const p of points){
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+    }
+    return { minX, minY, maxX, maxY, cx:(minX+maxX)/2, cy:(minY+maxY)/2, w:maxX-minX, h:maxY-minY };
+}
+function transformOriginFrom(pointSets, mode){
+    const pts = allPointsFrom(pointSets);
+    if (!pts.length) return { x:0, y:0 };
+    if (mode === 'origin') return { x:0, y:0 };
+    const bb = boundingBox(pts);
+    if (mode === 'center') return { x: bb.cx, y: bb.cy };
+    return { x: bb.minX, y: bb.minY }; // bbox top-left
+}
+function readTransformValues(){
+    const sxPct = parseFloat(scaleXInput.value);
+    const syPct = parseFloat(scaleYInput.value);
+    const tx = parseFloat(moveXInput.value);
+    const ty = parseFloat(moveYInput.value);
+    if ([sxPct, syPct, tx, ty].some(v => Number.isNaN(v))) return null;
+    return { sxPct, syPct, sx: sxPct/100, sy: syPct/100, tx, ty, originMode: scaleOriginSelect.value };
+}
+function resetTransformInputs(){
+    scaleXInput.value = '100';
+    scaleYInput.value = '100';
+    moveXInput.value = '0';
+    moveYInput.value = '0';
+}
+function ensureXformSnapshot(){
+    if (!state.xformSnapshot) state.xformSnapshot = cloneRoomPoints(state.rooms);
+    return state.xformSnapshot;
+}
+function applyPointsFromSnapshot(sx, sy, tx, ty, originMode){
+    const snap = ensureXformSnapshot();
+    const origin = transformOriginFrom(snap, originMode);
+    for (let i=0;i<state.rooms.length;i++){
+        const room = state.rooms[i];
+        const src = snap[i] || [];
+        room.points = src.map(p => ({
+            x: Math.round(origin.x + (p.x - origin.x) * sx + tx),
+            y: Math.round(origin.y + (p.y - origin.y) * sy + ty)
+        }));
+        room.coordinates = formatCoordinates(room.points);
+    }
+}
+function previewTransformFromInputs(){
+    if (!state.rooms.length) return;
+    const v = readTransformValues();
+    if (!v) return;
+    applyPointsFromSnapshot(v.sx, v.sy, v.tx, v.ty, v.originMode);
+    updateRoomsList();
+    redrawAll();
+    updateStatus(`Preview Scale ${v.sxPct}% × ${v.syPct}%  Offset (${v.tx}, ${v.ty}) — click Apply to bake`);
+}
+function commitTransformPreview(resetInputs=true){
+    if (!state.xformSnapshot) return false;
+    state.xformSnapshot = null;
+    if (resetInputs) resetTransformInputs();
+    return true;
+}
+function applyTransformToAll(){
+    const v = readTransformValues();
+    if (!v){ alert('Enter valid numbers for scale/offset.'); return; }
+    if (!state.rooms.length){ updateStatus('No polygons to transform'); return; }
+    applyPointsFromSnapshot(v.sx, v.sy, v.tx, v.ty, v.originMode);
+    state.xformSnapshot = null;
+    resetTransformInputs();
+    updateRoomsList();
+    redrawAll();
+    updateStatus(`Applied Scale ${v.sxPct}% × ${v.syPct}%  Offset (${v.tx}, ${v.ty}) to all rooms`);
+}
+function resetImportedAlignment(){
+    if (!state.rooms.length) return;
+    let n = 0;
+    for (const room of state.rooms){
+        if (!room._importedPoints) continue;
+        room.points = JSON.parse(JSON.stringify(room._importedPoints));
+        room.coordinates = formatCoordinates(room.points);
+        n++;
+    }
+    state.xformSnapshot = null;
+    resetTransformInputs();
+    updateRoomsList();
+    redrawAll();
+    updateStatus(n ? `Restored original imported coordinates (${n} rooms)` : 'No imported originals to restore');
+}
+
+function nearestVertex(pdfPos, maxDist=14){
+    let best = null, bestD = maxDist;
+    for (const room of state.rooms){
+        for (const p of room.points || []){
+            const d = dist(pdfPos, p);
+            if (d <= bestD){ bestD = d; best = { x:p.x, y:p.y }; }
+        }
+    }
+    return best;
+}
+function startCalibrate(){
+    if (!state.pdfDoc){ alert('Upload PDF first'); return; }
+    if (!state.rooms.length){ alert('Import or draw rooms first'); return; }
+    commitTransformPreview(true);
+    state.dragAllEnabled = false; refreshDragAllButton();
+    state.calibrate = { step: 0 };
+    calibrateBtn.textContent = 'Cancel Align';
+    calibrateBtn.classList.add('btn-danger');
+    calibrateBtn.classList.remove('btn-secondary');
+    drawCanvas.style.cursor = 'crosshair';
+    updateStatus('2-Point Align: click polygon corner #1 (snap to vertex)');
+}
+function cancelCalibrate(){
+    state.calibrate = null;
+    calibrateBtn.textContent = '2-Point Align';
+    calibrateBtn.classList.remove('btn-danger');
+    calibrateBtn.classList.add('btn-secondary');
+    drawCanvas.style.cursor = state.dragAllEnabled ? 'grab' : 'crosshair';
+}
+function handleCalibrateClick(ev){
+    const pdfPos = toPdfCoords(ev.clientX, ev.clientY);
+    const c = state.calibrate;
+    if (!c) return;
+    if (c.step === 0){
+        const v = nearestVertex(pdfPos);
+        if (!v){ updateStatus('Click closer to a polygon vertex for corner #1'); return; }
+        c.src0 = v; c.step = 1;
+        updateStatus(`Corner #1 = (${v.x}, ${v.y}). Now click where it SHOULD sit on the PDF.`);
+        return;
+    }
+    if (c.step === 1){
+        c.dst0 = pdfPos; c.step = 2;
+        updateStatus(`Target #1 = (${pdfPos.x}, ${pdfPos.y}). Click polygon corner #2.`);
+        return;
+    }
+    if (c.step === 2){
+        const v = nearestVertex(pdfPos);
+        if (!v){ updateStatus('Click closer to a polygon vertex for corner #2'); return; }
+        if (v.x === c.src0.x && v.y === c.src0.y){ updateStatus('Pick a different second vertex'); return; }
+        c.src1 = v; c.step = 3;
+        updateStatus(`Corner #2 = (${v.x}, ${v.y}). Now click where it SHOULD sit on the PDF.`);
+        return;
+    }
+    if (c.step === 3){
+        const dst1 = pdfPos;
+        const dxSrc = c.src1.x - c.src0.x, dySrc = c.src1.y - c.src0.y;
+        const dxDst = dst1.x - c.dst0.x, dyDst = dst1.y - c.dst0.y;
+        if (Math.abs(dxSrc) < 1 && Math.abs(dySrc) < 1){ alert('Source points are too close'); cancelCalibrate(); return; }
+        let sx = Math.abs(dxSrc) >= 1 ? dxDst / dxSrc : 1;
+        let sy = Math.abs(dySrc) >= 1 ? dyDst / dySrc : 1;
+        if (lockAspectCheckbox.checked){
+            const s = (Math.abs(dxSrc) >= Math.abs(dySrc)) ? sx : sy;
+            sx = s; sy = s;
+        }
+        if (!isFinite(sx) || !isFinite(sy) || Math.abs(sx) < 0.05 || Math.abs(sy) < 0.05){
+            alert('Computed scale is invalid. Pick two well-separated corners.');
+            cancelCalibrate();
+            return;
+        }
+        const tx = c.dst0.x - c.src0.x * sx;
+        const ty = c.dst0.y - c.src0.y * sy;
+        state.xformSnapshot = cloneRoomPoints(state.rooms);
+        applyPointsFromSnapshot(sx, sy, tx, ty, 'origin');
+        state.xformSnapshot = null;
+        resetTransformInputs();
+        cancelCalibrate();
+        updateRoomsList();
+        redrawAll();
+        updateStatus(`Aligned with scale ${(sx*100).toFixed(2)}% × ${(sy*100).toFixed(2)}%  offset (${Math.round(tx)}, ${Math.round(ty)})`);
+    }
+}
+
+function fitAllRoomsToPdf(){
+    if (!state.pdfDoc){ alert('Upload PDF first'); return; }
+    if (!state.rooms.length){ updateStatus('No polygons to fit'); return; }
+    commitTransformPreview(false);
+    const src = cloneRoomPoints(state.rooms);
+    const pdfW = pdfCanvas.width / state.scale;
+    const pdfH = pdfCanvas.height / state.scale;
+    const bb = boundingBox(allPointsFrom(src));
+    if (bb.w < 1 || bb.h < 1){ updateStatus('Cannot fit empty/degenerate layout'); return; }
+    const pad = Math.max(8, Math.round(Math.min(pdfW, pdfH) * 0.02));
+    const s = Math.min((pdfW - 2*pad) / bb.w, (pdfH - 2*pad) / bb.h);
+    const tx = pad + (pdfW - 2*pad - bb.w * s) / 2 - bb.minX * s;
+    const ty = pad + (pdfH - 2*pad - bb.h * s) / 2 - bb.minY * s;
+    state.xformSnapshot = src;
+    applyPointsFromSnapshot(s, s, tx, ty, 'origin');
+    state.xformSnapshot = null;
+    resetTransformInputs();
+    updateRoomsList();
+    redrawAll();
+    updateStatus(`Fit to PDF at ${(s*100).toFixed(2)}%  offset (${Math.round(tx)}, ${Math.round(ty)})`);
+}
+
+function onScaleInput(which){
+    if (lockAspectCheckbox.checked && which === 'x') scaleYInput.value = scaleXInput.value;
+    if (lockAspectCheckbox.checked && which === 'y') scaleXInput.value = scaleYInput.value;
+    previewTransformFromInputs();
+}
+
+applyTransformBtn.addEventListener('click', applyTransformToAll);
+resetTransformBtn.addEventListener('click', resetImportedAlignment);
+fitToPdfBtn.addEventListener('click', fitAllRoomsToPdf);
+calibrateBtn.addEventListener('click', () => {
+    if (state.calibrate){ cancelCalibrate(); updateStatus('2-Point Align cancelled'); return; }
+    startCalibrate();
+});
+scaleXInput.addEventListener('input', () => onScaleInput('x'));
+scaleYInput.addEventListener('input', () => onScaleInput('y'));
+moveXInput.addEventListener('input', previewTransformFromInputs);
+moveYInput.addEventListener('input', previewTransformFromInputs);
+scaleOriginSelect.addEventListener('change', previewTransformFromInputs);
+lockAspectCheckbox.addEventListener('change', () => {
+    if (lockAspectCheckbox.checked) onScaleInput('x');
+});
+
+/* Initialize */
+updateRoomsList();
+redrawAll();
+refreshDragAllButton();
+updateStatus('Ready — upload a PDF to start');
+
+</script>
+</body>
+</html>

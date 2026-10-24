@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Floor Plan Coordinate Extractor — Layer 1 / Layer 2</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Segoe UI',Tahoma,Verdana,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px}
+        .container{max-width:1800px;margin:0 auto;background:white;border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.25);overflow:hidden}
+        .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:22px 20px;text-align:center}
+        .header h1{font-size:1.4rem;margin-bottom:6px}
+        .header p{font-size:.9rem;opacity:.95}
+        .main-content{display:grid;grid-template-columns:1fr 400px;height:calc(100vh - 150px);min-height:420px}
+        .canvas-area{padding:14px;display:flex;flex-direction:column;background:#f8f9fa}
+        .controls{display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap;align-items:center}
+        .btn{padding:7px 11px;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+        .btn:disabled{opacity:.5;cursor:not-allowed}
+        .btn-primary{background:#667eea;color:#fff}.btn-success{background:#06d6a0;color:#fff}.btn-warning{background:#ffd166;color:#333}.btn-danger{background:#ef476f;color:#fff}.btn-info{background:#118ab2;color:#fff}.btn-secondary{background:#6c757d;color:#fff}
+        .btn-layer1{background:#e07b39;color:#fff}
+        .btn-layer2{background:#7b39e0;color:#fff}
+        .btn-layer1.active{background:#b85e22;box-shadow:0 0 0 3px rgba(224,123,57,.4)}
+        .btn-layer2.active{background:#5e22b8;box-shadow:0 0 0 3px rgba(123,57,224,.4)}
+        .file-input-wrapper{position:relative;overflow:hidden}
+        .file-input-wrapper input[type=file]{position:absolute;left:-9999px}
+        .canvas-wrapper{flex:1;position:relative;border:2px solid #ddd;border-radius:10px;overflow:auto;background:white;display:flex;align-items:center;justify-content:center}
+        .canvas-wrapper.edit-mode{border-color:#ffd166;box-shadow:0 0 0 3px rgba(255,209,102,.25)}
+        #pdfCanvas,#drawCanvas{position:absolute;top:0;left:0}
+        #drawCanvas{cursor:crosshair}
+        .sidebar{background:white;border-left:2px solid #e0e0e0;padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:0}
+        .layer-section{border-radius:10px;padding:12px;margin-bottom:12px}
+        .layer1-section{background:#fff5ee;border:2px solid #e07b39}
+        .layer2-section{background:#f5eeff;border:2px solid #7b39e0}
+        .layer-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+        .layer-title{font-size:1em;font-weight:700}
+        .layer1-title{color:#e07b39}
+        .layer2-title{color:#7b39e0}
+        .layer-actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+        .room-input-row{display:flex;gap:6px;margin-bottom:6px}
+        .room-input-row input{flex:1;padding:6px;border:2px solid #e0e0e0;border-radius:6px;font-size:12px}
+        .rooms-list{margin-top:8px;max-height:280px;overflow-y:auto}
+        .room-item{background:white;padding:8px;border-radius:7px;margin-bottom:8px}
+        .room-item.layer1{border-left:4px solid #e07b39}
+        .room-item.layer2{border-left:4px solid #7b39e0}
+        .room-item.editing{border-left-color:#ffd166;background:#fffef0;box-shadow:0 4px 12px rgba(255,209,102,.25)}
+        .room-item h3{font-size:.88em;margin-bottom:5px;color:#333;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+        .badge{font-size:10px;padding:2px 7px;border-radius:10px;background:#06d6a0;color:#fff;font-weight:600}
+        .badge-edit{background:#ffd166;color:#333}
+        .badge-l1{background:#e07b39}
+        .badge-l2{background:#7b39e0}
+        .room-item .coordinates{font-family:'Courier New',monospace;font-size:11px;color:#666;background:#f8f8f8;padding:6px;border-radius:4px;max-height:100px;overflow:auto;word-break:break-all}
+        .coordinate-editor{margin-top:8px}
+        .coordinate-point{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+        .coordinate-point input{flex:1;padding:5px;border:1px solid #ddd;border-radius:4px;font-family:'Courier New',monospace;font-size:12px}
+        .status-bar{padding:8px 14px;background:#f0f0f0;font-size:12px;color:#666;border-top:1px solid #ddd}
+        .status-bar.edit-mode{background:#fff9e6;border-top:2px solid #ffd166;color:#333;font-weight:600}
+        .empty-state{text-align:center;padding:30px 20px;color:#999;font-size:13px}
+        .toggle-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+        .toggle-row label{display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;color:#555;font-size:12px}
+        .overlay{position:absolute;left:12px;top:12px;background:rgba(0,0,0,0.6);color:#fff;padding:5px 9px;border-radius:6px;font-size:11px;z-index:40;pointer-events:none;display:flex;gap:10px;align-items:center}
+        .pdf-name{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .meta-input{width:100%;padding:5px;border:1px solid #ddd;border-radius:5px;margin-bottom:5px;font-size:12px}
+        .transform-group{display:flex;gap:6px;align-items:center}
+        .transform-input{width:80px;padding:5px;border-radius:6px;border:1px solid #ccc;text-align:center;font-size:12px}
+        .draw-target-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;font-weight:700}
+        .draw-target-btn{padding:5px 12px;border:2px solid transparent;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700}
+        .draw-target-btn.l1{background:#fff5ee;color:#e07b39;border-color:#e07b39}
+        .draw-target-btn.l2{background:#f5eeff;color:#7b39e0;border-color:#7b39e0}
+        .draw-target-btn.selected.l1{background:#e07b39;color:white}
+        .draw-target-btn.selected.l2{background:#7b39e0;color:white}
+        @media(max-width:1200px){.main-content{grid-template-columns:1fr;height:auto}.sidebar{border-left:none;border-top:2px solid #e0e0e0}}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🏠 Floor Plan Coordinate Extractor — Layer 1 / Layer 2</h1>
+        <p>Two independent CSV layers. Each layer has its own import, export, visibility, and drag controls.</p>
+    </div>
+    <div class="main-content">
+        <div class="canvas-area">
+            <!-- Top controls row -->
+            <div class="controls">
+                <div class="file-input-wrapper">
+                    <label for="pdfInput" class="btn btn-primary">📁 Upload PDF</label>
+                    <input type="file" id="pdfInput" accept=".pdf"/>
+                </div>
+                <button id="finishPolygon" class="btn btn-success" disabled>✓ Finish Polygon</button>
+                <button id="undoPoint" class="btn btn-warning" disabled>↶ Undo</button>
+                <button id="clearCurrent" class="btn btn-danger" disabled>✕ Clear</button>
+                <button id="zoomOut" class="btn btn-secondary">−</button>
+                <button id="zoomIn" class="btn btn-secondary">+</button>
+                <button id="fitWidth" class="btn btn-secondary">Fit</button>
+                <label class="btn btn-secondary" style="font-size:12px">
+                    <input type="checkbox" id="snapToGrid" style="width:14px;height:14px"/> Grid snap
+                </label>
+                <label class="btn btn-secondary" style="font-size:12px">
+                    <input type="checkbox" id="snapToVertices" checked style="width:14px;height:14px"/> Vertex snap
+                </label>
+            </div>
+            <!-- Draw target selector -->
+            <div class="controls" style="margin-bottom:4px">
+                <span style="font-size:12px;font-weight:700;color:#555">Drawing to:</span>
+                <button class="draw-target-btn l1 selected" id="drawToL1" onclick="setDrawTarget(1)">Layer 1</button>
+                <button class="draw-target-btn l2" id="drawToL2" onclick="setDrawTarget(2)">Layer 2</button>
+                <!-- Transform -->
+                <div class="transform-group" style="margin-left:auto">
+                    <input id="scaleX" class="transform-input" type="number" value="100" step="1" title="Scale X (%)">
+                    <input id="scaleY" class="transform-input" type="number" value="100" step="1" title="Scale Y (%)">
+                    <input id="moveX" class="transform-input" type="number" value="0" step="1" title="Move X">
+                    <input id="moveY" class="transform-input" type="number" value="0" step="1" title="Move Y">
+                    <select id="transformTarget" style="padding:5px;border-radius:6px;border:1px solid #ccc;font-size:12px">
+                        <option value="all">Both layers</option>
+                        <option value="1">Layer 1 only</option>
+                        <option value="2">Layer 2 only</option>
+                    </select>
+                    <button id="applyTransform" class="btn btn-success" style="font-size:12px">Apply</button>
+                </div>
+            </div>
+            <!-- Visibility toggles -->
+            <div class="toggle-row" style="margin-bottom:6px;padding:0 2px">
+                <label><input type="checkbox" id="showL1" checked/> Show Layer 1</label>
+                <label><input type="checkbox" id="showL2" checked/> Show Layer 2</label>
+                <label><input type="checkbox" id="showDrawn" checked/> Show Drawn</label>
+            </div>
+
+            <div class="canvas-wrapper" id="canvasWrapper">
+                <div class="overlay" id="overlay" style="display:none">
+                    <div class="pdf-name" id="pdfName">No file</div>
+                    <div id="overlayCoords">x: — , y: —</div>
+                </div>
+                <div class="empty-state" id="emptyState">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="70" height="70"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    <p>Upload a PDF to get started</p>
+                </div>
+                <canvas id="pdfCanvas"></canvas>
+                <canvas id="drawCanvas"></canvas>
+            </div>
+            <div class="status-bar" id="statusBar">Ready — upload a PDF</div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <!-- Layer 1 -->
+            <div class="layer-section layer1-section">
+                <div class="layer-header">
+                    <span class="layer-title layer1-title">🟠 Layer 1</span>
+                    <span id="l1Count" style="font-size:12px;color:#e07b39;font-weight:600">0 rooms</span>
+                </div>
+                <div class="layer-actions">
+                    <div class="file-input-wrapper">
+                        <label for="csv1Input" class="btn btn-layer1" style="font-size:11px">📊 Import CSV</label>
+                        <input type="file" id="csv1Input" accept=".csv"/>
+                    </div>
+                    <button onclick="exportCSV(1)" class="btn btn-layer1" style="font-size:11px">💾 Export CSV</button>
+                    <button id="dragL1Btn" class="btn btn-secondary" style="font-size:11px" onclick="toggleDragLayer(1)">🖱️ Drag Layer 1</button>
+                </div>
+                <div class="room-input-row">
+                    <input id="roomName1" placeholder="Room name" />
+                    <input id="roomCode1" placeholder="Code" style="max-width:80px"/>
+                </div>
+                <div class="rooms-list" id="roomsList1">
+                    <div class="empty-state"><p>No rooms. Draw or import CSV.</p></div>
+                </div>
+            </div>
+
+            <!-- Layer 2 -->
+            <div class="layer-section layer2-section">
+                <div class="layer-header">
+                    <span class="layer-title layer2-title">🟣 Layer 2</span>
+                    <span id="l2Count" style="font-size:12px;color:#7b39e0;font-weight:600">0 rooms</span>
+                </div>
+                <div class="layer-actions">
+                    <div class="file-input-wrapper">
+                        <label for="csv2Input" class="btn btn-layer2" style="font-size:11px">📊 Import CSV</label>
+                        <input type="file" id="csv2Input" accept=".csv"/>
+                    </div>
+                    <button onclick="exportCSV(2)" class="btn btn-layer2" style="font-size:11px">💾 Export CSV</button>
+                    <button id="dragL2Btn" class="btn btn-secondary" style="font-size:11px" onclick="toggleDragLayer(2)">🖱️ Drag Layer 2</button>
+                </div>
+                <div class="room-input-row">
+                    <input id="roomName2" placeholder="Room name" />
+                    <input id="roomCode2" placeholder="Code" style="max-width:80px"/>
+                </div>
+                <div class="rooms-list" id="roomsList2">
+                    <div class="empty-state"><p>No rooms. Draw or import CSV.</p></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const LAYER_COLORS = {
+    1: { fill:'rgba(224,123,57,0.18)', stroke:'#e07b39', editFill:'rgba(255,209,102,0.25)', editStroke:'#ffd166', point:'#e07b39' },
+    2: { fill:'rgba(123,57,224,0.18)', stroke:'#7b39e0', editFill:'rgba(180,120,255,0.22)', editStroke:'#a855f7', point:'#7b39e0' }
+};
+
+const state = {
+    pdfDoc: null, pdfName: null, pageNum: 1, scale: 1.5,
+    points: [],      // in-progress polygon points
+    drawTarget: 1,   // which layer new polygons go to
+    layers: {
+        1: { rooms: [], showImported: true, showDrawn: true },
+        2: { rooms: [], showImported: true, showDrawn: true }
+    },
+    isDrawing: false,
+    editingLayer: null,
+    editingRoomIndex: null,
+    dragMode: null,
+    dragIndex: null,
+    dragStart: null,
+    dragLayerActive: 0, // 0=none, 1=dragging layer1, 2=dragging layer2
+    dragLayerStart: null,
+    showL1: true, showL2: true, showDrawn: true,
+    isEditingMetadata: false,
+    minScale: 0.4, maxScale: 4.0
+};
+
+const pdfInput   = document.getElementById('pdfInput');
+const csv1Input  = document.getElementById('csv1Input');
+const csv2Input  = document.getElementById('csv2Input');
+const pdfCanvas  = document.getElementById('pdfCanvas');
+const drawCanvas = document.getElementById('drawCanvas');
+const canvasWrapper = document.getElementById('canvasWrapper');
+const finishPolygonBtn = document.getElementById('finishPolygon');
+const undoPointBtn = document.getElementById('undoPoint');
+const clearCurrentBtn = document.getElementById('clearCurrent');
+const statusBar = document.getElementById('statusBar');
+const emptyState = document.getElementById('emptyState');
+const overlay = document.getElementById('overlay');
+const pdfNameEl = document.getElementById('pdfName');
+const overlayCoords = document.getElementById('overlayCoords');
+const snapToGridCheckbox = document.getElementById('snapToGrid');
+const snapToVerticesCheckbox = document.getElementById('snapToVertices');
+const scaleXInput = document.getElementById('scaleX');
+const scaleYInput = document.getElementById('scaleY');
+const moveXInput  = document.getElementById('moveX');
+const moveYInput  = document.getElementById('moveY');
+const pdfCtx  = pdfCanvas.getContext('2d');
+const drawCtx = drawCanvas.getContext('2d');
+
+function updateStatus(msg){ statusBar.textContent = msg; }
+function formatCoordinates(pts){ return pts.map(p=>`${p.x}~${p.y}`).join(','); }
+function toScreen(pt){ return { x: Math.round(pt.x*state.scale), y: Math.round(pt.y*state.scale) }; }
+function toPdfCoords(cx,cy){
+    const rect = drawCanvas.getBoundingClientRect();
+    return { x: Math.round((cx-rect.left)/state.scale), y: Math.round((cy-rect.top)/state.scale) };
+}
+function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+/** Quote CSV fields that contain commas, quotes, or newlines */
+function csvCell(v){
+    const s=String(v??'');
+    if(/[",\n\r]/.test(s)) return '"'+s.replace(/"/g,'""')+'"';
+    return s;
+}
+function parseCsvRow(line){
+    const out=[]; let cur='', inQ=false;
+    for(let i=0;i<line.length;i++){
+        const c=line[i];
+        if(inQ){
+            if(c==='"'){ if(line[i+1]==='"'){ cur+='"'; i++; } else inQ=false; }
+            else cur+=c;
+        } else {
+            if(c==='"') inQ=true;
+            else if(c===','){ out.push(cur); cur=''; }
+            else cur+=c;
+        }
+    }
+    out.push(cur);
+    return out.map(s=>String(s||'').trim());
+}
+
+function polygonCentroid(pts){
+    let area=0,cx=0,cy=0;
+    const n=pts.length;
+    for(let i=0;i<n;i++){
+        const p0=pts[i],p1=pts[(i+1)%n];
+        const a=p0.x*p1.y-p1.x*p0.y;
+        area+=a; cx+=(p0.x+p1.x)*a; cy+=(p0.y+p1.y)*a;
+    }
+    if(Math.abs(area)<1e-6){
+        const avg=pts.reduce((s,p)=>({x:s.x+p.x,y:s.y+p.y}),{x:0,y:0});
+        return{cx:avg.x/n,cy:avg.y/n};
+    }
+    area/=2; return{cx:cx/(6*area),cy:cy/(6*area)};
+}
+
+function pointInPolygon(x,y,poly){
+    if(!poly||poly.length<3) return false;
+    let inside=false;
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+        const xi=poly[i].x,yi=poly[i].y,xj=poly[j].x,yj=poly[j].y;
+        if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi)) inside=!inside;
+    }
+    return inside;
+}
+
+/* Draw target */
+function setDrawTarget(layer){
+    state.drawTarget = layer;
+    document.getElementById('drawToL1').className = 'draw-target-btn l1' + (layer===1?' selected':'');
+    document.getElementById('drawToL2').className = 'draw-target-btn l2' + (layer===2?' selected':'');
+    updateStatus(`Drawing to Layer ${layer}`);
+}
+window.setDrawTarget = setDrawTarget;
+
+/* PDF */
+pdfInput.addEventListener('change', async(e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    updateStatus('Loading PDF...');
+    const reader = new FileReader();
+    reader.onload = async function(){
+        try{
+            state.pdfDoc = await pdfjsLib.getDocument(new Uint8Array(this.result)).promise;
+            state.pdfName = file.name;
+            pdfNameEl.textContent = state.pdfName;
+            overlay.style.display='flex';
+            await renderPage(state.pageNum);
+            emptyState.style.display='none';
+            state.isDrawing=true;
+            finishPolygonBtn.disabled=false; clearCurrentBtn.disabled=false;
+            redrawAll();
+            updateStatus(`PDF loaded (${pdfCanvas.width}×${pdfCanvas.height})`);
+        }catch(err){ updateStatus('Error: '+(err.message||err)); }
+    };
+    reader.readAsArrayBuffer(file);
+});
+
+async function renderPage(num){
+    if(!state.pdfDoc) return;
+    const page = await state.pdfDoc.getPage(num);
+    const vp = page.getViewport({scale:state.scale});
+    pdfCanvas.width=drawCanvas.width=Math.round(vp.width);
+    pdfCanvas.height=drawCanvas.height=Math.round(vp.height);
+    pdfCtx.clearRect(0,0,pdfCanvas.width,pdfCanvas.height);
+    await page.render({canvasContext:pdfCtx,viewport:vp}).promise;
+}
+
+/* Zoom */
+document.getElementById('zoomIn').addEventListener('click', async()=>{
+    state.scale=clamp(+(state.scale*1.2).toFixed(3),state.minScale,state.maxScale);
+    if(state.pdfDoc){await renderPage(state.pageNum);redrawAll();updateStatus(`Zoom: ${Math.round(state.scale*100)}%`);}
+});
+document.getElementById('zoomOut').addEventListener('click', async()=>{
+    state.scale=clamp(+(state.scale/1.2).toFixed(3),state.minScale,state.maxScale);
+    if(state.pdfDoc){await renderPage(state.pageNum);redrawAll();updateStatus(`Zoom: ${Math.round(state.scale*100)}%`);}
+});
+document.getElementById('fitWidth').addEventListener('click', async()=>{
+    if(!state.pdfDoc) return;
+    const page=await state.pdfDoc.getPage(state.pageNum);
+    const vp1=page.getViewport({scale:1.0});
+    state.scale=clamp(+((canvasWrapper.clientWidth-32)/vp1.width).toFixed(3),state.minScale,state.maxScale);
+    await renderPage(state.pageNum);redrawAll();updateStatus(`Fit: ${Math.round(state.scale*100)}%`);
+});
+
+/* CSV import */
+csv1Input.addEventListener('change', e=>{ importCSV(e.target.files[0], 1); csv1Input.value=''; });
+csv2Input.addEventListener('change', e=>{ importCSV(e.target.files[0], 2); csv2Input.value=''; });
+
+function importCSV(file, layerNum){
+    if(!file) return;
+    if(!state.pdfDoc){ alert('Upload PDF first'); return; }
+    const reader = new FileReader();
+    reader.onload = ev => parseAndImportCSV(ev.target.result, layerNum);
+    reader.readAsText(file);
+}
+
+function parseAndImportCSV(csv, layerNum){
+    const rows = csv.split(/\r?\n/).filter(r=>r.trim());
+    if(rows.length<2){ alert('CSV invalid'); return; }
+    let imported=0, skipped=0;
+    for(let i=1;i<rows.length;i++){
+        const cols=parseCsvRow(rows[i].replace(/^\uFEFF/,''));
+        if(cols.length<6){ skipped++; continue; }
+        const [processorId,rootArea,rootSubarea,rootSubSub,code,name] = cols;
+        const coords=[];
+        for(let j=6;j<cols.length;j++){
+            const v=cols[j].trim();
+            if(!v||!v.includes('~')) continue;
+            const [x,y]=v.split('~').map(s=>parseInt(s.trim()));
+            if(!isNaN(x)&&!isNaN(y)) coords.push({x,y});
+        }
+        if(coords.length>=3){
+            state.layers[layerNum].rooms.push({name,code,points:coords,coordinates:formatCoordinates(coords),imported:true,metadata:{processorId,rootArea,rootSubarea,rootSubSub}});
+            imported++;
+        } else skipped++;
+    }
+    redrawAll(); updateRoomsList(layerNum);
+    updateStatus(`Layer ${layerNum}: imported ${imported} rooms${skipped?` (${skipped} skipped)`:''}`);
+}
+
+/* CSV export */
+function exportCSV(layerNum){
+    const rooms = state.layers[layerNum].rooms;
+    if(!rooms.length){ alert(`No rooms in Layer ${layerNum}`); return; }
+    const maxCoords = Math.max(...rooms.map(r=>r.points.length));
+    let csv='processor_id,root_area,root_subarea,root_sub_subarea,code,name';
+    for(let i=0;i<maxCoords;i++) csv+=',';
+    csv+='\n';
+    rooms.forEach((room,idx)=>{
+        const m=room.metadata||{};
+        csv+=`${csvCell(m.processorId||'1')},${csvCell(m.rootArea||'Area')},${csvCell(m.rootSubarea||'Floor')},${csvCell(m.rootSubSub||'Unit')},${csvCell(room.code||(900+idx))},${csvCell(room.name)}`;
+        room.points.forEach(pt=>csv+=`,${pt.x}~${pt.y}`);
+        for(let i=0;i<maxCoords-room.points.length;i++) csv+=',';
+        csv+='\n';
+    });
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=`layer${layerNum}_coordinates.csv`;a.click();URL.revokeObjectURL(url);
+    updateStatus(`Layer ${layerNum} CSV exported`);
+}
+window.exportCSV = exportCSV;
+
+/* Drawing */
+drawCanvas.addEventListener('click', ev=>{
+    if(state.dragLayerActive) return;
+    if(state.isEditingMetadata) return;
+    if(state.editingLayer!==null) return;
+    if(!state.isDrawing) return;
+    let {x,y} = toPdfCoords(ev.clientX,ev.clientY);
+    if(state.points.length>0){
+        const thr=8;
+        let sx=false,sy=false;
+        for(const p of state.points){
+            if(!sx&&Math.abs(x-p.x)<=thr){x=p.x;sx=true;}
+            if(!sy&&Math.abs(y-p.y)<=thr){y=p.y;sy=true;}
+            if(sx&&sy) break;
+        }
+    }
+    if(snapToGridCheckbox.checked){const g=5;x=Math.round(x/g)*g;y=Math.round(y/g)*g;}
+    if(snapToVerticesCheckbox.checked){
+        for(const lk of [1,2]) for(const r of state.layers[lk].rooms) for(const p of r.points){
+            if(Math.abs(p.x-x)<=4) x=p.x;
+            if(Math.abs(p.y-y)<=4) y=p.y;
+        }
+    }
+    state.points.push({x,y});
+    undoPointBtn.disabled=false;
+    redrawAll();
+});
+
+drawCanvas.addEventListener('contextmenu', ev=>{
+    ev.preventDefault();
+    if(!state.pdfDoc||state.isEditingMetadata) return;
+    const rect=drawCanvas.getBoundingClientRect();
+    const sx=ev.clientX-rect.left,sy=ev.clientY-rect.top;
+    const pdfPos={x:Math.round(sx/state.scale),y:Math.round(sy/state.scale)};
+    for(const lk of [1,2]){
+        const rooms=state.layers[lk].rooms;
+        for(let i=rooms.length-1;i>=0;i--){
+            if(pointInPolygon(pdfPos.x,pdfPos.y,rooms[i].points)){
+                const act=confirm(`"${rooms[i].name}" (Layer ${lk})\n\nOK = DELETE\nCancel = EDIT`);
+                if(act) deleteRoom(lk,i); else editRoom(lk,i);
+                return;
+            }
+        }
+    }
+});
+
+/* Finish / Undo / Clear */
+finishPolygonBtn.addEventListener('click', ()=>{
+    if(state.points.length<3){ alert('Add at least 3 points'); return; }
+    const lk=state.drawTarget;
+    const nameEl=document.getElementById(`roomName${lk}`);
+    const codeEl=document.getElementById(`roomCode${lk}`);
+    const name=(nameEl.value||`Room ${state.layers[lk].rooms.length+1}`).trim();
+    const code=(codeEl.value||'').trim();
+    state.layers[lk].rooms.push({name,code,points:JSON.parse(JSON.stringify(state.points)),coordinates:formatCoordinates(state.points),imported:false,metadata:{}});
+    state.points=[];
+    updateRoomsList(lk); redrawAll();
+    nameEl.value=''; codeEl.value='';
+    updateStatus(`Room "${name}" added to Layer ${lk}`);
+});
+undoPointBtn.addEventListener('click', ()=>{ if(state.points.length) state.points.pop(); undoPointBtn.disabled=state.points.length===0; redrawAll(); });
+clearCurrentBtn.addEventListener('click', ()=>{ state.points=[]; undoPointBtn.disabled=true; redrawAll(); updateStatus('Current drawing cleared'); });
+
+/* Redraw */
+function drawRoomPolygon(room, layerNum, isEditing){
+    if(room.points.length<3) return;
+    const c=LAYER_COLORS[layerNum];
+    drawCtx.save();
+    drawCtx.beginPath();
+    drawCtx.moveTo(room.points[0].x*state.scale, room.points[0].y*state.scale);
+    for(let i=1;i<room.points.length;i++) drawCtx.lineTo(room.points[i].x*state.scale, room.points[i].y*state.scale);
+    drawCtx.closePath();
+    drawCtx.fillStyle  = isEditing ? c.editFill  : c.fill;
+    drawCtx.strokeStyle= isEditing ? c.editStroke: c.stroke;
+    drawCtx.lineWidth  = isEditing ? 4 : 3;
+    drawCtx.fill(); drawCtx.stroke();
+    if(isEditing){
+        for(const p of room.points){
+            const s=toScreen(p);
+            drawCtx.beginPath(); drawCtx.arc(s.x,s.y,6,0,Math.PI*2);
+            drawCtx.fillStyle=c.editStroke; drawCtx.fill();
+            drawCtx.strokeStyle='#333'; drawCtx.lineWidth=2; drawCtx.stroke();
+        }
+    }
+    drawCtx.restore();
+}
+
+function drawPointScreen(x,y,r=5,fill='#ef476f',stroke='#fff',line=2){
+    drawCtx.beginPath();drawCtx.arc(x,y,r,0,Math.PI*2);
+    drawCtx.fillStyle=fill;drawCtx.fill();
+    drawCtx.lineWidth=line;drawCtx.strokeStyle=stroke;drawCtx.stroke();
+}
+function drawLineScreen(x1,y1,x2,y2,color='#667eea',w=2){
+    drawCtx.beginPath();drawCtx.moveTo(x1,y1);drawCtx.lineTo(x2,y2);
+    drawCtx.strokeStyle=color;drawCtx.lineWidth=w;drawCtx.stroke();
+}
+
+function redrawAll(){
+    drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+    for(const lk of [1,2]){
+        if(lk===1&&!state.showL1) continue;
+        if(lk===2&&!state.showL2) continue;
+        const rooms=state.layers[lk].rooms;
+        for(let i=0;i<rooms.length;i++){
+            const room=rooms[i];
+            if(room.imported&&!state.layers[lk].showImported) continue;
+            if(!room.imported&&!state.showDrawn) continue;
+            const isEditing=(state.editingLayer===lk&&state.editingRoomIndex===i);
+            drawRoomPolygon(room,lk,isEditing);
+        }
+    }
+    // in-progress polygon
+    for(let i=0;i<state.points.length;i++){
+        const s=toScreen(state.points[i]);
+        drawPointScreen(s.x,s.y,5,LAYER_COLORS[state.drawTarget].stroke,'#fff',2);
+        if(i>0){
+            const p1=toScreen(state.points[i-1]),p2=toScreen(state.points[i]);
+            drawLineScreen(p1.x,p1.y,p2.x,p2.y,LAYER_COLORS[state.drawTarget].stroke,2);
+        }
+    }
+}
+
+/* Rooms list UI */
+function updateRoomsList(layerNum){
+    const rooms=state.layers[layerNum].rooms;
+    const listEl=document.getElementById(`roomsList${layerNum}`);
+    const countEl=document.getElementById(`l${layerNum}Count`);
+    countEl.textContent=`${rooms.length} room${rooms.length!==1?'s':''}`;
+    if(!rooms.length){ listEl.innerHTML='<div class="empty-state"><p>No rooms. Draw or import CSV.</p></div>'; return; }
+    listEl.innerHTML=rooms.map((room,idx)=>{
+        const editing=(state.editingLayer===layerNum&&state.editingRoomIndex===idx);
+        return `<div class="room-item layer${layerNum} ${editing?'editing':''}">
+            <h3>${escapeHtml(room.name)} ${room.code?`(${escapeHtml(room.code)})`:''} ${room.imported?`<span class="badge badge-l${layerNum}">CSV</span>`:''} ${editing?'<span class="badge badge-edit">EDITING</span>':''}</h3>
+            ${editing ? generateCoordinateEditor(layerNum,idx) : `<div class="coordinates">${formatCoordinates(room.points)}</div>`}
+            <div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap">
+                ${editing
+                    ? `<button class="btn btn-success" style="font-size:11px" onclick="saveEdit(${layerNum},${idx})">💾 Save</button><button class="btn btn-secondary" style="font-size:11px" onclick="cancelEdit(${layerNum},${idx})">✕ Cancel</button>`
+                    : `<button class="btn btn-warning" style="font-size:11px" onclick="editRoom(${layerNum},${idx})">✏️ Edit</button><button class="btn btn-info" style="font-size:11px" onclick="highlightRoom(${layerNum},${idx})">👁️</button><button class="btn btn-danger" style="font-size:11px" onclick="deleteRoom(${layerNum},${idx})">🗑️</button>`}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function updateAllRoomsLists(){ updateRoomsList(1); updateRoomsList(2); }
+
+function generateCoordinateEditor(layerNum,roomIndex){
+    const room=state.layers[layerNum].rooms[roomIndex];
+    let html=`<div class="coordinate-editor">
+        <input id="meta-name-${layerNum}-${roomIndex}" class="meta-input" placeholder="Room Name" value="${escapeHtml(room.name||'')}" onfocus="metaFocus()" onblur="metaBlur(${layerNum},${roomIndex})" onkeydown="metaKeydown(event,${layerNum},${roomIndex})"/>
+        <input id="meta-code-${layerNum}-${roomIndex}" class="meta-input" placeholder="Code" value="${escapeHtml(room.code||'')}" onfocus="metaFocus()" onblur="metaBlur(${layerNum},${roomIndex})" onkeydown="metaKeydown(event,${layerNum},${roomIndex})"/>`;
+    room.points.forEach((pt,i)=>{
+        html+=`<div class="coordinate-point"><input type="number" value="${pt.x}" onchange="updatePoint(${layerNum},${roomIndex},${i},'x',this.value)"/><input type="number" value="${pt.y}" onchange="updatePoint(${layerNum},${roomIndex},${i},'y',this.value)"/><button class="btn btn-danger" style="font-size:10px;padding:4px 6px" onclick="deletePoint(${layerNum},${roomIndex},${i})">✕</button></div>`;
+    });
+    html+=`<button class="btn btn-primary" style="margin-top:6px;font-size:11px" onclick="addPoint(${layerNum},${roomIndex})">+ Add Point</button></div>`;
+    return html;
+}
+
+function metaFocus(){ state.isEditingMetadata=true; }
+window.metaFocus=metaFocus;
+function metaBlur(lk,idx){
+    const n=document.getElementById(`meta-name-${lk}-${idx}`);
+    const c=document.getElementById(`meta-code-${lk}-${idx}`);
+    if(n&&c) commitMeta(lk,idx,n.value.trim(),c.value.trim());
+    state.isEditingMetadata=false;
+}
+window.metaBlur=metaBlur;
+function metaKeydown(ev,lk,idx){
+    if(ev.key==='Enter'){
+        ev.preventDefault();
+        const n=document.getElementById(`meta-name-${lk}-${idx}`);
+        const c=document.getElementById(`meta-code-${lk}-${idx}`);
+        if(n&&c) commitMeta(lk,idx,n.value.trim(),c.value.trim());
+        document.activeElement&&document.activeElement.blur();
+    } else if(ev.key==='Escape'){
+        document.activeElement&&document.activeElement.blur();
+    }
+}
+window.metaKeydown=metaKeydown;
+function commitMeta(lk,idx,name,code){
+    const room=state.layers[lk].rooms[idx];
+    if(!room) return;
+    room.name=name; room.code=code;
+    room.coordinates=formatCoordinates(room.points);
+    updateRoomsList(lk); updateStatus(`Saved: ${name}`);
+}
+
+function editRoom(lk,idx){
+    if(state.editingLayer!==null){ alert('Save or cancel current edit'); return; }
+    state.layers[lk].rooms[idx]._orig=JSON.parse(JSON.stringify(state.layers[lk].rooms[idx].points));
+    state.editingLayer=lk; state.editingRoomIndex=idx;
+    state.isDrawing=false;
+    state.dragLayerActive=0; refreshDragButtons();
+    canvasWrapper.classList.add('edit-mode'); drawCanvas.classList.add('edit-mode'); statusBar.classList.add('edit-mode');
+    finishPolygonBtn.disabled=true; undoPointBtn.disabled=true; clearCurrentBtn.disabled=true;
+    updateAllRoomsLists(); redrawAll(); updateStatus(`EDIT MODE — Layer ${lk}: "${state.layers[lk].rooms[idx].name}"`);
+}
+window.editRoom=editRoom;
+
+function saveEdit(lk,idx){
+    const room=state.layers[lk].rooms[idx];
+    if(room.points.length<3){ alert('Need at least 3 points'); return; }
+    delete room._orig; room.coordinates=formatCoordinates(room.points);
+    state.editingLayer=null; state.editingRoomIndex=null; state.isDrawing=true;
+    canvasWrapper.classList.remove('edit-mode'); drawCanvas.classList.remove('edit-mode'); statusBar.classList.remove('edit-mode');
+    finishPolygonBtn.disabled=false; clearCurrentBtn.disabled=false;
+    updateAllRoomsLists(); redrawAll(); updateStatus(`Saved: ${room.name}`);
+}
+window.saveEdit=saveEdit;
+
+function cancelEdit(lk,idx){
+    const room=state.layers[lk].rooms[idx];
+    if(room._orig){ room.points=room._orig; delete room._orig; room.coordinates=formatCoordinates(room.points); }
+    state.editingLayer=null; state.editingRoomIndex=null; state.isDrawing=true;
+    canvasWrapper.classList.remove('edit-mode'); drawCanvas.classList.remove('edit-mode'); statusBar.classList.remove('edit-mode');
+    finishPolygonBtn.disabled=false; clearCurrentBtn.disabled=false;
+    updateAllRoomsLists(); redrawAll(); updateStatus('Edit cancelled');
+}
+window.cancelEdit=cancelEdit;
+
+function deleteRoom(lk,idx){
+    if(!confirm(`Delete "${state.layers[lk].rooms[idx].name}"?`)) return;
+    if(state.editingLayer===lk&&state.editingRoomIndex===idx){
+        state.editingLayer=null; state.editingRoomIndex=null; state.isDrawing=true;
+        canvasWrapper.classList.remove('edit-mode'); drawCanvas.classList.remove('edit-mode'); statusBar.classList.remove('edit-mode');
+        finishPolygonBtn.disabled=false; clearCurrentBtn.disabled=false;
+    }
+    state.layers[lk].rooms.splice(idx,1); updateRoomsList(lk); redrawAll(); updateStatus('Room deleted');
+}
+window.deleteRoom=deleteRoom;
+
+function highlightRoom(lk,idx){
+    redrawAll();
+    const room=state.layers[lk].rooms[idx];
+    if(room.points.length<3) return;
+    drawCtx.save();
+    drawCtx.beginPath(); drawCtx.moveTo(room.points[0].x*state.scale,room.points[0].y*state.scale);
+    for(let i=1;i<room.points.length;i++) drawCtx.lineTo(room.points[i].x*state.scale,room.points[i].y*state.scale);
+    drawCtx.closePath(); drawCtx.strokeStyle='#ff6b6b'; drawCtx.lineWidth=6; drawCtx.setLineDash([12,6]); drawCtx.stroke();
+    drawCtx.restore(); updateStatus(`Highlighted: ${room.name} (Layer ${lk})`);
+    setTimeout(()=>{ redrawAll(); updateStatus('Ready'); },1400);
+}
+window.highlightRoom=highlightRoom;
+
+function updatePoint(lk,ridx,pidx,coord,val){
+    const n=parseInt(val); if(isNaN(n)){ alert('Invalid number'); return; }
+    const room=state.layers[lk].rooms[ridx];
+    room.points[pidx][coord]=n; room.coordinates=formatCoordinates(room.points); redrawAll();
+}
+window.updatePoint=updatePoint;
+
+function deletePoint(lk,ridx,pidx){
+    const room=state.layers[lk].rooms[ridx];
+    if(room.points.length<=3){ alert('Minimum 3 points'); return; }
+    if(!confirm(`Delete point ${pidx+1}?`)) return;
+    room.points.splice(pidx,1); updateRoomsList(lk); redrawAll();
+}
+window.deletePoint=deletePoint;
+
+function addPoint(lk,ridx){
+    const room=state.layers[lk].rooms[ridx];
+    const avgX=Math.round(room.points.reduce((s,p)=>s+p.x,0)/room.points.length);
+    const avgY=Math.round(room.points.reduce((s,p)=>s+p.y,0)/room.points.length);
+    room.points.push({x:avgX,y:avgY}); updateRoomsList(lk); redrawAll();
+}
+window.addPoint=addPoint;
+
+/* Drag per-layer */
+function toggleDragLayer(lk){
+    if(state.editingLayer!==null){ alert('Save or cancel current edit first'); return; }
+    if(state.dragLayerActive===lk){
+        state.dragLayerActive=0;
+    } else {
+        state.dragLayerActive=lk;
+        state.dragMode=null; state.dragStart=null;
+    }
+    refreshDragButtons();
+    if(state.dragLayerActive){
+        drawCanvas.style.cursor='grab';
+        updateStatus(`Drag Layer ${state.dragLayerActive} mode — click & drag anywhere to move all Layer ${state.dragLayerActive} polygons`);
+    } else {
+        drawCanvas.style.cursor='crosshair';
+        updateStatus('Drag mode off');
+    }
+}
+window.toggleDragLayer=toggleDragLayer;
+
+function refreshDragButtons(){
+    const b1=document.getElementById('dragL1Btn');
+    const b2=document.getElementById('dragL2Btn');
+    if(state.dragLayerActive===1){
+        b1.textContent='🖱️ Drag Layer 1 (ON)'; b1.className='btn btn-layer1';
+        b2.textContent='🖱️ Drag Layer 2';      b2.className='btn btn-secondary';
+    } else if(state.dragLayerActive===2){
+        b1.textContent='🖱️ Drag Layer 1';      b1.className='btn btn-secondary';
+        b2.textContent='🖱️ Drag Layer 2 (ON)'; b2.className='btn btn-layer2';
+    } else {
+        b1.textContent='🖱️ Drag Layer 1'; b1.className='btn btn-secondary';
+        b2.textContent='🖱️ Drag Layer 2'; b2.className='btn btn-secondary';
+    }
+}
+
+/* Mouse events */
+drawCanvas.addEventListener('mousedown', ev=>{
+    if(state.isEditingMetadata) return;
+    const rect=drawCanvas.getBoundingClientRect();
+    const sx=ev.clientX-rect.left, sy=ev.clientY-rect.top;
+
+    // Per-layer drag mode
+    if(state.dragLayerActive){
+        const origRooms=state.layers[state.dragLayerActive].rooms.map(r=>({points:JSON.parse(JSON.stringify(r.points))}));
+        state.dragMode='layerMove'; state.dragStart={sx,sy,origRooms,lk:state.dragLayerActive};
+        drawCanvas.style.cursor='grabbing';
+        return;
+    }
+
+    if(state.editingLayer===null) return;
+    const room=state.layers[state.editingLayer].rooms[state.editingRoomIndex];
+    const hit=8;
+    for(let i=0;i<room.points.length;i++){
+        const s=toScreen(room.points[i]);
+        if(Math.abs(s.x-sx)<=hit&&Math.abs(s.y-sy)<=hit){
+            state.dragMode='vertex'; state.dragIndex=i; drawCanvas.style.cursor='grabbing'; return;
+        }
+    }
+    const pdfX=Math.round(sx/state.scale),pdfY=Math.round(sy/state.scale);
+    if(pointInPolygon(pdfX,pdfY,room.points)){
+        state.dragMode='move'; state.dragStart={sx,sy,origPoints:JSON.parse(JSON.stringify(room.points))}; drawCanvas.style.cursor='grabbing';
+    }
+});
+
+drawCanvas.addEventListener('mousemove', ev=>{
+    if(state.isEditingMetadata) return;
+    const rect=drawCanvas.getBoundingClientRect();
+    const sx=ev.clientX-rect.left, sy=ev.clientY-rect.top;
+
+    // overlay coords
+    if(state.pdfDoc){
+        const p=toPdfCoords(ev.clientX,ev.clientY);
+        overlayCoords.textContent=`x: ${p.x}, y: ${p.y}`;
+    }
+
+    // Drag whole layer
+    if(state.dragMode==='layerMove'&&state.dragStart){
+        const dx=(sx-state.dragStart.sx)/state.scale;
+        const dy=(sy-state.dragStart.sy)/state.scale;
+        const lk=state.dragStart.lk;
+        for(let r=0;r<state.layers[lk].rooms.length;r++){
+            const orig=state.dragStart.origRooms[r];
+            if(!orig) continue;
+            state.layers[lk].rooms[r].points=orig.points.map(p=>({x:Math.round(p.x+dx),y:Math.round(p.y+dy)}));
+            state.layers[lk].rooms[r].coordinates=formatCoordinates(state.layers[lk].rooms[r].points);
+        }
+        redrawAll(); updateStatus(`Layer ${lk}: moving (${Math.round(dx)}, ${Math.round(dy)})`);
+        return;
+    }
+
+    if(state.editingLayer!==null){
+        const room=state.layers[state.editingLayer].rooms[state.editingRoomIndex];
+        if(state.dragMode==='vertex'&&state.dragIndex!==null){
+            let pdf=toPdfCoords(ev.clientX,ev.clientY);
+            if(snapToGridCheckbox.checked){const g=5;pdf.x=Math.round(pdf.x/g)*g;pdf.y=Math.round(pdf.y/g)*g;}
+            room.points[state.dragIndex]={x:pdf.x,y:pdf.y};
+            room.coordinates=formatCoordinates(room.points);
+            redrawAll(); return;
+        }
+        if(state.dragMode==='move'&&state.dragStart){
+            const dx=(sx-state.dragStart.sx)/state.scale,dy=(sy-state.dragStart.sy)/state.scale;
+            for(let i=0;i<room.points.length;i++){
+                room.points[i].x=Math.round(state.dragStart.origPoints[i].x+dx);
+                room.points[i].y=Math.round(state.dragStart.origPoints[i].y+dy);
+            }
+            room.coordinates=formatCoordinates(room.points);
+            redrawAll(); return;
+        }
+    }
+
+    // Preview while drawing
+    if(state.isDrawing&&state.points.length>0&&!state.dragLayerActive){
+        redrawAll();
+        const pdfPos=toPdfCoords(ev.clientX,ev.clientY);
+        const thr=8;
+        const vAligned=[],hAligned=[];
+        for(const p of state.points){
+            if(Math.abs(pdfPos.x-p.x)<=thr) vAligned.push(p);
+            if(Math.abs(pdfPos.y-p.y)<=thr) hAligned.push(p);
+        }
+        if(vAligned.length){
+            drawCtx.save(); drawCtx.strokeStyle='#ff6b6b'; drawCtx.lineWidth=2; drawCtx.setLineDash([8,4]);
+            for(const p of vAligned){const s=toScreen(p);drawCtx.beginPath();drawCtx.moveTo(s.x,0);drawCtx.lineTo(s.x,drawCanvas.height);drawCtx.stroke();}
+            drawCtx.restore();
+        }
+        if(hAligned.length){
+            drawCtx.save(); drawCtx.strokeStyle='#06d6a0'; drawCtx.lineWidth=2; drawCtx.setLineDash([8,4]);
+            for(const p of hAligned){const s=toScreen(p);drawCtx.beginPath();drawCtx.moveTo(0,s.y);drawCtx.lineTo(drawCanvas.width,s.y);drawCtx.stroke();}
+            drawCtx.restore();
+        }
+        const last=state.points[state.points.length-1];
+        const sc=toScreen(pdfPos),sl=toScreen(last);
+        drawCtx.save(); drawCtx.strokeStyle='rgba(102,126,234,0.5)'; drawCtx.lineWidth=2; drawCtx.setLineDash([6,4]);
+        drawCtx.beginPath(); drawCtx.moveTo(sl.x,sl.y); drawCtx.lineTo(sc.x,sc.y); drawCtx.stroke(); drawCtx.restore();
+        drawPointScreen(sc.x,sc.y,4,'rgba(102,126,234,0.4)','#667eea',2);
+    }
+});
+
+drawCanvas.addEventListener('mouseup', ()=>{
+    if(state.dragMode){
+        state.dragMode=null; state.dragIndex=null; state.dragStart=null;
+        if(state.dragLayerActive) drawCanvas.style.cursor='grab';
+        else if(state.editingLayer!==null) drawCanvas.style.cursor='move';
+        else drawCanvas.style.cursor='crosshair';
+        updateRoomsList(1); updateRoomsList(2);
+        updateStatus('Done');
+    }
+});
+drawCanvas.addEventListener('mouseleave', ()=>{
+    if(state.dragMode){ state.dragMode=null; state.dragIndex=null; state.dragStart=null; drawCanvas.style.cursor='default'; redrawAll(); }
+});
+
+/* Visibility */
+document.getElementById('showL1').addEventListener('change', e=>{ state.showL1=e.target.checked; redrawAll(); });
+document.getElementById('showL2').addEventListener('change', e=>{ state.showL2=e.target.checked; redrawAll(); });
+document.getElementById('showDrawn').addEventListener('change', e=>{ state.showDrawn=e.target.checked; redrawAll(); });
+
+/* Transform */
+document.getElementById('applyTransform').addEventListener('click', ()=>{
+    const sxPct=parseFloat(scaleXInput.value), syPct=parseFloat(scaleYInput.value);
+    const tx=parseFloat(moveXInput.value), ty=parseFloat(moveYInput.value);
+    const target=document.getElementById('transformTarget').value;
+    if([sxPct,syPct,tx,ty].some(isNaN)){ alert('Enter valid numbers'); return; }
+    const sx=sxPct/100, sy=syPct/100;
+    const layersToApply = target==='all' ? [1,2] : [parseInt(target)];
+    for(const lk of layersToApply){
+        for(const room of state.layers[lk].rooms){
+            if(!room.points.length) continue;
+            const c=polygonCentroid(room.points);
+            room.points=room.points.map(p=>({x:Math.round(c.cx+(p.x-c.cx)*sx+tx),y:Math.round(c.cy+(p.y-c.cy)*sy+ty)}));
+            room.coordinates=formatCoordinates(room.points);
+        }
+    }
+    updateAllRoomsLists(); redrawAll();
+    updateStatus(`Transform applied to ${target==='all'?'both layers':'Layer '+target}`);
+});
+
+/* Init */
+updateAllRoomsLists();
+redrawAll();
+refreshDragButtons();
+updateStatus('Ready — upload a PDF to start');
+</script>
+</body>
+</html>
