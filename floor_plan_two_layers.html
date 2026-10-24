@@ -192,7 +192,8 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+if (typeof pdfjsLib !== 'undefined')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 const LAYER_COLORS = {
     1: { fill:'rgba(224,123,57,0.18)', stroke:'#e07b39', editFill:'rgba(255,209,102,0.25)', editStroke:'#ffd166', point:'#e07b39' },
@@ -242,6 +243,7 @@ const moveXInput  = document.getElementById('moveX');
 const moveYInput  = document.getElementById('moveY');
 const pdfCtx  = pdfCanvas.getContext('2d');
 const drawCtx = drawCanvas.getContext('2d');
+let pdfLoadId = 0;
 
 function updateStatus(msg){ statusBar.textContent = msg; }
 function formatCoordinates(pts){ return pts.map(p=>`${p.x}~${p.y}`).join(','); }
@@ -312,63 +314,91 @@ window.setDrawTarget = setDrawTarget;
 
 /* PDF */
 pdfInput.addEventListener('change', async(e)=>{
-    const file = e.target.files[0];
+    const input = e.currentTarget;
+    const file = input.files[0];
     if(!file) return;
+    input.value = '';
+    const loadId = ++pdfLoadId;
     updateStatus('Loading PDF...');
-    const reader = new FileReader();
-    reader.onload = async function(){
-        try{
-            state.pdfDoc = await pdfjsLib.getDocument(new Uint8Array(this.result)).promise;
-            state.pdfName = file.name;
-            pdfNameEl.textContent = state.pdfName;
-            overlay.style.display='flex';
-            await renderPage(state.pageNum);
-            emptyState.style.display='none';
-            state.isDrawing=true;
-            finishPolygonBtn.disabled=false; clearCurrentBtn.disabled=false;
-            redrawAll();
-            updateStatus(`PDF loaded (${pdfCanvas.width}×${pdfCanvas.height})`);
-        }catch(err){ updateStatus('Error: '+(err.message||err)); }
-    };
-    reader.readAsArrayBuffer(file);
+    let pdfDoc;
+    try{
+        if(!file.size) throw new Error('The selected PDF is empty.');
+        if(typeof pdfjsLib === 'undefined') throw new Error('PDF.js did not load. Check your internet connection and reload the page.');
+        const data = new Uint8Array(await file.arrayBuffer());
+        const header = new TextDecoder().decode(data.subarray(0, Math.min(data.length, 1024)));
+        if(!header.includes('%PDF-')) throw new Error('The selected file is not a valid PDF.');
+        const task = pdfjsLib.getDocument({data});
+        try{ pdfDoc = await task.promise; }
+        catch(err){ await task.destroy().catch(cleanupErr => console.error('Failed to release PDF loading task:', cleanupErr)); throw err; }
+        const loadedScale = await renderPage(state.pageNum, pdfDoc);
+        if(loadId !== pdfLoadId){
+            await pdfDoc.destroy();
+            if(state.pdfDoc) await renderPage(state.pageNum);
+            return;
+        }
+        const previousPdf = state.pdfDoc;
+        state.pdfDoc = pdfDoc;
+        state.scale = loadedScale;
+        state.pdfName = file.name;
+        pdfNameEl.textContent = state.pdfName;
+        overlay.style.display='flex';
+        emptyState.style.display='none';
+        state.isDrawing=true;
+        finishPolygonBtn.disabled=false; clearCurrentBtn.disabled=false;
+        redrawAll();
+        updateStatus(`PDF loaded (${pdfCanvas.width}×${pdfCanvas.height})`);
+        if(previousPdf) previousPdf.destroy().catch(err => console.error('Failed to release replaced PDF:', err));
+    }catch(err){
+        if(loadId === pdfLoadId) updateStatus('Error loading PDF: '+(err.message||err));
+        if(pdfDoc) await pdfDoc.destroy().catch(cleanupErr => console.error('Failed to release PDF:', cleanupErr));
+        if(loadId === pdfLoadId && state.pdfDoc){
+            try{ await renderPage(state.pageNum); redrawAll(); }
+            catch(restoreErr){ console.error('Failed to restore previous PDF preview:', restoreErr); }
+        }
+    }
 });
 
-async function renderPage(num){
-    if(!state.pdfDoc) return;
-    const page = await state.pdfDoc.getPage(num);
-    const vp = page.getViewport({scale:state.scale});
+async function renderPage(num, pdfDoc = state.pdfDoc, requestedScale = state.scale){
+    if(!pdfDoc) return;
+    const page = await pdfDoc.getPage(num);
+    const baseViewport=page.getViewport({scale:1});
+    const maxPixels=4_000_000,maxDimension=8192;
+    const scale=Math.min(requestedScale,maxDimension/baseViewport.width,maxDimension/baseViewport.height,Math.sqrt(maxPixels/(baseViewport.width*baseViewport.height)));
+    const vp=page.getViewport({scale});
     pdfCanvas.width=drawCanvas.width=Math.round(vp.width);
     pdfCanvas.height=drawCanvas.height=Math.round(vp.height);
     pdfCtx.clearRect(0,0,pdfCanvas.width,pdfCanvas.height);
     await page.render({canvasContext:pdfCtx,viewport:vp}).promise;
+    return scale;
 }
 
 /* Zoom */
 document.getElementById('zoomIn').addEventListener('click', async()=>{
-    state.scale=clamp(+(state.scale*1.2).toFixed(3),state.minScale,state.maxScale);
-    if(state.pdfDoc){await renderPage(state.pageNum);redrawAll();updateStatus(`Zoom: ${Math.round(state.scale*100)}%`);}
+    const requested=clamp(+(state.scale*1.2).toFixed(3),state.minScale,state.maxScale);
+    if(state.pdfDoc){state.scale=await renderPage(state.pageNum,state.pdfDoc,requested);redrawAll();updateStatus(`Zoom: ${Math.round(state.scale*100)}%`);}
 });
 document.getElementById('zoomOut').addEventListener('click', async()=>{
-    state.scale=clamp(+(state.scale/1.2).toFixed(3),state.minScale,state.maxScale);
-    if(state.pdfDoc){await renderPage(state.pageNum);redrawAll();updateStatus(`Zoom: ${Math.round(state.scale*100)}%`);}
+    const requested=clamp(+(state.scale/1.2).toFixed(3),state.minScale,state.maxScale);
+    if(state.pdfDoc){state.scale=await renderPage(state.pageNum,state.pdfDoc,requested);redrawAll();updateStatus(`Zoom: ${Math.round(state.scale*100)}%`);}
 });
 document.getElementById('fitWidth').addEventListener('click', async()=>{
     if(!state.pdfDoc) return;
     const page=await state.pdfDoc.getPage(state.pageNum);
     const vp1=page.getViewport({scale:1.0});
-    state.scale=clamp(+((canvasWrapper.clientWidth-32)/vp1.width).toFixed(3),state.minScale,state.maxScale);
-    await renderPage(state.pageNum);redrawAll();updateStatus(`Fit: ${Math.round(state.scale*100)}%`);
+    state.scale=await renderPage(state.pageNum,state.pdfDoc,clamp(+((canvasWrapper.clientWidth-32)/vp1.width).toFixed(3),state.minScale,state.maxScale));
+    redrawAll();updateStatus(`Fit: ${Math.round(state.scale*100)}%`);
 });
 
 /* CSV import */
-csv1Input.addEventListener('change', e=>{ importCSV(e.target.files[0], 1); csv1Input.value=''; });
-csv2Input.addEventListener('change', e=>{ importCSV(e.target.files[0], 2); csv2Input.value=''; });
+csv1Input.addEventListener('change', e=>{ const input=e.currentTarget,file=input.files[0];input.value='';importCSV(file,1); });
+csv2Input.addEventListener('change', e=>{ const input=e.currentTarget,file=input.files[0];input.value='';importCSV(file,2); });
 
 function importCSV(file, layerNum){
     if(!file) return;
     if(!state.pdfDoc){ alert('Upload PDF first'); return; }
     const reader = new FileReader();
     reader.onload = ev => parseAndImportCSV(ev.target.result, layerNum);
+    reader.onerror = () => updateStatus(`Layer ${layerNum}: could not read the selected CSV file`);
     reader.readAsText(file);
 }
 
@@ -413,7 +443,8 @@ function exportCSV(layerNum){
     });
     const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
     const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=`layer${layerNum}_coordinates.csv`;a.click();URL.revokeObjectURL(url);
+    const a=document.createElement('a');a.href=url;a.download=`layer${layerNum}_coordinates.csv`;a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
     updateStatus(`Layer ${layerNum} CSV exported`);
 }
 window.exportCSV = exportCSV;
@@ -849,11 +880,15 @@ document.getElementById('applyTransform').addEventListener('click', ()=>{
     if([sxPct,syPct,tx,ty].some(isNaN)){ alert('Enter valid numbers'); return; }
     const sx=sxPct/100, sy=syPct/100;
     const layersToApply = target==='all' ? [1,2] : [parseInt(target)];
+    const roomsToTransform = layersToApply.flatMap(lk=>state.layers[lk].rooms);
+    const points = roomsToTransform.flatMap(room=>room.points);
+    if(!points.length){ updateStatus('No room coordinates to transform'); return; }
+    const bounds=points.reduce((b,p)=>({minX:Math.min(b.minX,p.x),minY:Math.min(b.minY,p.y)}),{minX:Infinity,minY:Infinity});
+    const {minX,minY}=bounds;
     for(const lk of layersToApply){
         for(const room of state.layers[lk].rooms){
             if(!room.points.length) continue;
-            const c=polygonCentroid(room.points);
-            room.points=room.points.map(p=>({x:Math.round(c.cx+(p.x-c.cx)*sx+tx),y:Math.round(c.cy+(p.y-c.cy)*sy+ty)}));
+            room.points=room.points.map(p=>({x:Math.round(minX+(p.x-minX)*sx+tx),y:Math.round(minY+(p.y-minY)*sy+ty)}));
             room.coordinates=formatCoordinates(room.points);
         }
     }

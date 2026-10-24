@@ -161,7 +161,8 @@
 <!-- PDF.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+if (typeof pdfjsLib !== 'undefined')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 const state = {
     pdfDoc: null,
@@ -185,6 +186,7 @@ const state = {
     xformSnapshot: null,   // point snapshot while previewing scale/offset
     calibrate: null        // { step, src0, dst0, src1 }
 };
+let pdfLoadId = 0;
 
 /* DOM */
 const pdfInput = document.getElementById('pdfInput');
@@ -301,56 +303,86 @@ function pointInPolygon(x, y, polygon) {
     return inside;
 }
 
+async function loadPdfFile(file){
+    if(!file.size) throw new Error('The selected PDF is empty.');
+    if(typeof pdfjsLib === 'undefined') throw new Error('PDF.js did not load. Check your internet connection and reload the page.');
+    const data = new Uint8Array(await file.arrayBuffer());
+    const header = new TextDecoder().decode(data.subarray(0, Math.min(data.length, 1024)));
+    if(!header.includes('%PDF-')) throw new Error('The selected file is not a valid PDF.');
+    const task = pdfjsLib.getDocument({data});
+    try{
+        return await task.promise;
+    }catch(err){
+        await task.destroy().catch(cleanupErr => console.error('Failed to release PDF loading task:', cleanupErr));
+        throw err;
+    }
+}
+
 /* PDF Rendering */
 pdfInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
+    const input = e.currentTarget;
+    const file = input.files[0];
     if (!file) return;
+    input.value = '';
+    const loadId = ++pdfLoadId;
     updateStatus('Loading PDF...');
-    const reader = new FileReader();
-    reader.onload = async function() {
-        try {
-            const typed = new Uint8Array(this.result);
-            state.pdfDoc = await pdfjsLib.getDocument(typed).promise;
-            state.pdfName = file.name;
-            pdfNameEl.textContent = state.pdfName;
-            overlay.style.display = 'flex';
-            await renderPage(state.pageNum);
-            updateStatus(`PDF loaded (${pdfCanvas.width}×${pdfCanvas.height}). Click to start drawing or import CSV.`);
-            enableDrawing();
-            redrawAll();
-        } catch (err) {
-            updateStatus('Error loading PDF: ' + (err.message || err));
+    let pdfDoc;
+    try{
+        pdfDoc = await loadPdfFile(file);
+        updateStatus('Rendering PDF page...');
+        const loadedScale = await renderPage(state.pageNum, pdfDoc);
+        if(loadId !== pdfLoadId){
+            await pdfDoc.destroy();
+            if(state.pdfDoc) await renderPage(state.pageNum);
+            return;
         }
-    };
-    reader.readAsArrayBuffer(file);
+        const previousPdf = state.pdfDoc;
+        state.pdfDoc = pdfDoc;
+        state.scale = loadedScale;
+        state.pdfName = file.name;
+        pdfNameEl.textContent = state.pdfName;
+        overlay.style.display = 'flex';
+        updateStatus(`PDF loaded (${pdfCanvas.width}×${pdfCanvas.height}). Click to start drawing or import CSV.`);
+        enableDrawing();
+        redrawAll();
+        if(previousPdf) previousPdf.destroy().catch(err => console.error('Failed to release replaced PDF:', err));
+    }catch(err){
+        if(loadId === pdfLoadId) updateStatus('Error loading PDF: ' + (err.message || err));
+        if(pdfDoc) await pdfDoc.destroy().catch(cleanupErr => console.error('Failed to release PDF:', cleanupErr));
+        if(loadId === pdfLoadId && state.pdfDoc){
+            try{ await renderPage(state.pageNum); redrawAll(); }
+            catch(restoreErr){ console.error('Failed to restore previous PDF preview:', restoreErr); }
+        }
+    }
 });
 
-async function renderPage(pageNum){
-    if(!state.pdfDoc) return;
-    const page = await state.pdfDoc.getPage(pageNum);
-    const viewport = page.getViewport({ scale: state.scale });
+async function renderPage(pageNum, pdfDoc = state.pdfDoc, requestedScale = state.scale){
+    if(!pdfDoc) return;
+    const page = await pdfDoc.getPage(pageNum);
+    if(pdfDoc !== state.pdfDoc) updateStatus('Drawing PDF page...');
+    const baseViewport = page.getViewport({scale:1});
+    const maxPixels = 4_000_000, maxDimension = 8192;
+    const scale = Math.min(requestedScale,maxDimension/baseViewport.width,maxDimension/baseViewport.height,Math.sqrt(maxPixels/(baseViewport.width*baseViewport.height)));
+    const viewport = page.getViewport({scale});
     pdfCanvas.width = Math.round(viewport.width);
     pdfCanvas.height = Math.round(viewport.height);
     drawCanvas.width = pdfCanvas.width;
     drawCanvas.height = pdfCanvas.height;
-    canvasStage.style.width = pdfCanvas.width + 'px';
-    canvasStage.style.height = pdfCanvas.height + 'px';
     pdfCtx.clearRect(0,0,pdfCanvas.width,pdfCanvas.height);
     await page.render({ canvasContext: pdfCtx, viewport }).promise;
+    return scale;
 }
 
 /* Zoom controls */
 zoomInBtn.addEventListener('click', async () => {
     const newScale = clamp(+ (state.scale * 1.2).toFixed(3), state.minScale, state.maxScale);
     if (Math.abs(newScale - state.scale) < 1e-6) return;
-    state.scale = newScale;
-    if (state.pdfDoc){ await renderPage(state.pageNum); redrawAll(); updateStatus(`Zoom: ${Math.round(state.scale*100)}%`); }
+    if (state.pdfDoc){ state.scale = await renderPage(state.pageNum,state.pdfDoc,newScale); redrawAll(); updateStatus(`Zoom: ${Math.round(state.scale*100)}%`); }
 });
 zoomOutBtn.addEventListener('click', async () => {
     const newScale = clamp(+ (state.scale / 1.2).toFixed(3), state.minScale, state.maxScale);
     if (Math.abs(newScale - state.scale) < 1e-6) return;
-    state.scale = newScale;
-    if (state.pdfDoc){ await renderPage(state.pageNum); redrawAll(); updateStatus(`Zoom: ${Math.round(state.scale*100)}%`); }
+    if (state.pdfDoc){ state.scale = await renderPage(state.pageNum,state.pdfDoc,newScale); redrawAll(); updateStatus(`Zoom: ${Math.round(state.scale*100)}%`); }
 });
 fitWidthBtn.addEventListener('click', async () => {
     if (!state.pdfDoc) return;
@@ -358,22 +390,23 @@ fitWidthBtn.addEventListener('click', async () => {
     const vp1 = page.getViewport({ scale: 1.0 });
     const containerW = Math.max(canvasWrapper.clientWidth - 32, 200); // some padding
     const desiredScale = containerW / vp1.width;
-    state.scale = clamp(+desiredScale.toFixed(3), state.minScale, state.maxScale);
-    await renderPage(state.pageNum);
+    state.scale = await renderPage(state.pageNum,state.pdfDoc,clamp(+desiredScale.toFixed(3),state.minScale,state.maxScale));
     redrawAll();
     updateStatus(`Zoom: Fit (${Math.round(state.scale*100)}%)`);
 });
 
 /* CSV import */
 csvInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
+    const input = e.currentTarget;
+    const file = input.files[0];
     if (!file) return;
-    if (!state.pdfDoc) { alert('Upload PDF first'); csvInput.value=''; return; }
+    input.value = '';
+    if (!state.pdfDoc) { alert('Upload PDF first'); return; }
     const reader = new FileReader();
     reader.onload = function(ev) {
         parseAndImportCSV(ev.target.result);
-        csvInput.value='';
     };
+    reader.onerror = () => updateStatus('Could not read the selected CSV file.');
     reader.readAsText(file);
 });
 
@@ -725,7 +758,8 @@ exportCSVBtn.addEventListener('click', ()=> {
     });
     const BOM = '\uFEFF'; const blob = new Blob([BOM+csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'floor_plan_coordinates.csv'; a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href = url; a.download = 'floor_plan_coordinates.csv'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     updateStatus('CSV exported with adjusted coordinates (scale / offset / drag included)');
 });
 
@@ -739,7 +773,7 @@ function updateRoomsList(){
     roomsList.innerHTML = state.rooms.map((room, idx) => {
         const editing = state.editingRoomIndex === idx;
         return `<div class="room-item ${room.imported?'imported':''} ${editing?'editing':''}">
-            <h3>${room.name} ${room.code?`(${room.code})`:''} ${room.imported?'<span class="badge">IMPORTED</span>':''} ${editing?'<span class="badge badge-edit">EDITING</span>':''}</h3>
+            <h3>${escapeHtml(room.name)} ${room.code?`(${escapeHtml(room.code)})`:''} ${room.imported?'<span class="badge">IMPORTED</span>':''} ${editing?'<span class="badge badge-edit">EDITING</span>':''}</h3>
             ${editing?generateCoordinateEditor(idx):`<div class="coordinates">${formatCoordinates(room.points)}</div>`}
             <div class="actions" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
                 ${editing?`<button class="btn btn-success" onclick="saveEdit(${idx})">💾 Save</button><button class="btn btn-secondary" onclick="cancelEdit(${idx})">✕ Cancel</button>`:

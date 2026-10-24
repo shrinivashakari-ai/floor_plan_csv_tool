@@ -310,7 +310,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+if (typeof pdfjsLib !== 'undefined')
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const S={inPdf:null,outPdf:null,outName:null,outScale:1.5,inW:0,inH:0,outW:0,outH:0,areaNames:[],rooms:[],points:[],isDrawing:false,editIdx:null,hoverPt:-1,activePt:-1,dragMode:null,dragIdx:null,dragStart:null,dragOrigPts:null,isEditMeta:false,pendingIdx:null,modalSelName:null};
 const $=id=>document.getElementById(id);
 const pc=$('pc'),dc=$('dc'),cw=$('cw'),ci=$('ci');
@@ -327,17 +328,214 @@ function polyCenter(pts){let a=0,cx=0,cy=0;const n=pts.length;for(let i=0;i<n;i+
 function pip(x,y,poly){if(!poly||poly.length<3)return false;let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i].x,yi=poly[i].y,xj=poly[j].x,yj=poly[j].y;if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))inside=!inside;}return inside;}
 function toScr(pt){return{x:Math.round(pt.x*S.outScale),y:Math.round(pt.y*S.outScale)};}
 function toPdf(cx,cy){const r=cw.getBoundingClientRect();return{x:Math.round((cx-r.left+cw.scrollLeft-14)/S.outScale),y:Math.round((cy-r.top+cw.scrollTop-14)/S.outScale)};}
-$('inPdf').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;pst('Loading input PDF…','scan');const buf=await file.arrayBuffer();try{S.inPdf=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;const pg=await S.inPdf.getPage(1);const vp=pg.getViewport({scale:1});S.inW=vp.width;S.inH=vp.height;await extractNames();checkBothLoaded();setStep(S.outPdf?3:2);}catch(err){pst('Error loading input PDF: '+(err.message||err));}});
+let inPdfLoadId = 0;
+let outPdfLoadId = 0;
+async function loadPdfFile(file) {
+  if (!file.size) throw new Error('The selected file is empty.');
+  if (typeof pdfjsLib === 'undefined') throw new Error('PDF.js did not load. Check your internet connection and reload the page.');
+  const data = new Uint8Array(await file.arrayBuffer());
+  const header = new TextDecoder().decode(data.subarray(0, Math.min(data.length, 1024)));
+  if (!header.includes('%PDF-')) throw new Error('The selected file is not a valid PDF.');
+  const task = pdfjsLib.getDocument({data});
+  try { return await task.promise; }
+  catch (err) {
+    await task.destroy().catch(cleanupErr => console.error('Failed to release PDF loading task:', cleanupErr));
+    throw err;
+  }
+}
+$('inPdf').addEventListener('change', async e => {
+  const input = e.currentTarget;
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const loadId = ++inPdfLoadId;
+  pst('Loading input PDF…', 'scan');
+  let pdf;
+  let inW, inH, areaNames;
+  try {
+    pdf = await loadPdfFile(file);
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({scale:1});
+    inW = viewport.width;
+    inH = viewport.height;
+    areaNames = await extractNames(pdf, loadId);
+  } catch (err) {
+    if (loadId === inPdfLoadId) pst('Could not load input PDF: ' + (err.message || err));
+    if (pdf) await pdf.destroy().catch(cleanupErr => console.error('Failed to release input PDF:', cleanupErr));
+    return;
+  }
+  if (loadId !== inPdfLoadId) {
+    await pdf.destroy().catch(cleanupErr => console.error('Failed to release superseded input PDF:', cleanupErr));
+    return;
+  }
+  const oldPdf = S.inPdf;
+  S.inPdf = pdf;
+  S.inW = inW;
+  S.inH = inH;
+  S.areaNames = areaNames;
+  renderNames();
+  const banner = $('nBanner');
+  banner.textContent = '✦ ' + S.areaNames.length + ' names extracted — matched by relative position.';
+  banner.classList.add('show');
+  pst('✓ ' + S.areaNames.length + ' names extracted (input: ' + Math.round(S.inW) + '×' + Math.round(S.inH) + ' pt)', 'on');
+  checkBothLoaded();
+  setStep(S.outPdf ? 3 : 2);
+  if (oldPdf) oldPdf.destroy().catch(cleanupErr => console.error('Failed to release replaced input PDF:', cleanupErr));
+});
 const AREA_PREFIXES=['WS ','PASSAGE ','CONFERENCE ROOM ','FOCUS ROOM ','HUDDLE ROOM ','PRIVATE OFFICE ','BREAKOUT ','KITCHENETTE ','LOCKERS ','PRINT ','MUG WASH ','COFFEE POINT ','SCRUM ROOM ','SCRUM ','TOUCHDOWN ','TOUCH DOWN ','PHONE BOOTH ','PHONEBOOTH ','STORE ROOM ','LMS ','RECEPTION','LOBBY','PANTRY','SERVER','UTILITY','CORRIDOR','OPEN OFFICE','OPEN AREA','MEETING','CABIN','DISCUSSION','COLLAB','STORE','GAME RM','POD ','OPEN AREA','QUIET RM','THINK ROOM','WORK LOUNGE','GURU BAR','LEARNING RM','HIGHSEC','RC BUILT','BREAK FIX','OPERATIONAL','MEET AND GREET','PRE-FUNCTIONAL','BMS','ENTRANCE','ELECTRICAL','1P','2P','3P','4P','6P','8P','10P','12P','14P','XXL'];
 function isAreaName(s){if(!s||s.length<2)return false;const up=s.toUpperCase().trim();if(AREA_PREFIXES.some(pfx=>up.startsWith(pfx.trim())))return true;if(/^(OS|HS|DS|PS)-[\d/]+$/.test(up))return true;if(/[A-Z].*\s+(OS|HS|DS|PS)-[\d/]+$/.test(up))return true;return false;}
-async function extractNames(){const seen=new Set();const all=[];for(let p=1;p<=S.inPdf.numPages;p++){const page=await S.inPdf.getPage(p);const vp=page.getViewport({scale:1});const pgW=vp.width;const pgH=vp.height;const tc=await page.getTextContent();const items=[];for(const item of tc.items){const t=(item.str||'').trim();if(!t)continue;const tx=item.transform?item.transform[4]:pgW/2;const ty=item.transform?item.transform[5]:pgH/2;items.push({t,tx,ty});}for(const it of items){if(isAreaName(it.t)&&!seen.has(it.t)){seen.add(it.t);const rx=it.tx/pgW;const ry=(pgH-it.ty)/pgH;all.push({name:it.t.trim(),rx,ry});}}const used=new Set();for(let i=0;i<items.length;i++){if(used.has(i))continue;const base=items[i];const group=[base];for(let j=i+1;j<items.length;j++){if(used.has(j))continue;const it=items[j];if(Math.abs(it.ty-base.ty)<=5){const minGap=group.reduce((mn,g)=>{const gap=Math.abs(it.tx-g.tx);return gap<mn?gap:mn;},Infinity);if(minGap<=150)group.push(it);}}if(group.length<2)continue;group.sort((a,b)=>a.tx-b.tx);const joined=group.map(g=>g.t).join(' ').replace(/\s+/g,' ').trim();if(isAreaName(joined)&&!seen.has(joined)){seen.add(joined);const anchor=group[0];const rx=anchor.tx/pgW;const ry=(pgH-anchor.ty)/pgH;all.push({name:joined,rx,ry});group.forEach(g=>used.add(items.indexOf(g)));}for(let a=0;a<group.length;a++){for(let b=a+1;b<group.length;b++){const pair=[group[a],group[b]].sort((x,y)=>x.tx-y.tx);const pj=pair.map(g=>g.t).join(' ').trim();if(isAreaName(pj)&&!seen.has(pj)){seen.add(pj);const rx=pair[0].tx/pgW;const ry=(pgH-pair[0].ty)/pgH;all.push({name:pj,rx,ry});}}}}}const deduped=[];all.sort((a,b)=>b.name.length-a.name.length);const dedupSeen=new Set();for(const n of all){const key=n.name.toUpperCase().replace(/\s+/g,'');if(!dedupSeen.has(key)){dedupSeen.add(key);deduped.push(n);}}deduped.sort((a,b)=>a.name.localeCompare(b.name));S.areaNames=deduped.map(n=>({name:n.name,rx:n.rx,ry:n.ry,code:(n.name.match(/(OS-[\d/]+|HS-[\d/]+|DS-[\d/]+|PS-[\d/]+)/)||[])[1]||'',used:false}));renderNames();const nb=$('nBanner');nb.textContent=`✦ ${S.areaNames.length} names extracted — matched by relative position.`;nb.classList.add('show');pst(`✓ ${S.areaNames.length} names extracted`,'on');}
+async function extractNames(pdf, loadId) {
+  const seen = new Set();
+  const all = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    if (loadId !== inPdfLoadId) return null;
+    pst('Extracting room names — page ' + pageNumber + ' of ' + pdf.numPages + '…', 'scan');
+    const page = await pdf.getPage(pageNumber);
+    try {
+      const viewport = page.getViewport({scale:1});
+      const pageWidth = viewport.width, pageHeight = viewport.height;
+      const content = await page.getTextContent();
+      const items = [];
+      for (const item of content.items) {
+        const text = (item.str || '').trim();
+        if (!text) continue;
+        items.push({t:text, tx:item.transform ? item.transform[4] : pageWidth/2, ty:item.transform ? item.transform[5] : pageHeight/2});
+      }
+      items.sort((a,b)=>a.ty-b.ty || a.tx-b.tx);
+      for (const item of items) {
+        if (isAreaName(item.t) && !seen.has(item.t)) {
+          seen.add(item.t);
+          all.push({name:item.t, rx:item.tx/pageWidth, ry:(pageHeight-item.ty)/pageHeight});
+        }
+      }
+      let lineStart = 0;
+      while (lineStart < items.length) {
+        let lineEnd = lineStart + 1;
+        const lineY = items[lineStart].ty;
+        while (lineEnd < items.length && Math.abs(items[lineEnd].ty-lineY) <= 5) lineEnd++;
+        const line = items.slice(lineStart, lineEnd).sort((a,b)=>a.tx-b.tx);
+        let groupStart = 0;
+        while (groupStart < line.length) {
+          let groupEnd = groupStart + 1;
+          while (groupEnd < line.length && line[groupEnd].tx-line[groupEnd-1].tx <= 150) groupEnd++;
+          if (groupEnd-groupStart > 1) {
+            const group = line.slice(groupStart, groupEnd);
+            const joined = group.map(item=>item.t).join(' ').replace(/\s+/g,' ').trim();
+            if (isAreaName(joined) && !seen.has(joined)) {
+              seen.add(joined);
+              all.push({name:joined, rx:group[0].tx/pageWidth, ry:(pageHeight-group[0].ty)/pageHeight});
+            }
+            for (let i=0; i<group.length-1; i++) {
+              const pair = (group[i].t + ' ' + group[i+1].t).trim();
+              if (isAreaName(pair) && !seen.has(pair)) {
+                seen.add(pair);
+                all.push({name:pair, rx:group[i].tx/pageWidth, ry:(pageHeight-group[i].ty)/pageHeight});
+              }
+            }
+          }
+          groupStart = groupEnd;
+        }
+        lineStart = lineEnd;
+      }
+    } finally {
+      page.cleanup();
+    }
+    await tick();
+  }
+  const longestFirst = all.sort((a,b)=>b.name.length-a.name.length);
+  const deduped = [];
+  const normalizedNames = new Set();
+  for (const item of longestFirst) {
+    const key = item.name.toUpperCase().replace(/\s+/g,'');
+    if (!normalizedNames.has(key)) {
+      normalizedNames.add(key);
+      deduped.push(item);
+    }
+  }
+  deduped.sort((a,b)=>a.name.localeCompare(b.name));
+  return deduped.map(item=>({
+    name:item.name, rx:item.rx, ry:item.ry,
+    code:(item.name.match(/(OS-[\d/]+|HS-[\d/]+|DS-[\d/]+|PS-[\d/]+)/)||[])[1]||'',
+    used:false
+  }));
+}
 function renderNames(){const q=($('nSearch').value||'').toLowerCase();const list=S.areaNames.filter(n=>!q||n.name.toLowerCase().includes(q));$('nList').innerHTML=list.length?list.map(n=>`<div class="ni ${n.used?'used':''}"><div class="ndot"></div><div class="ntext">${esc(n.name)}</div>${n.used?'<span class="nck">✓</span>':''}</div>`).join(''):'<div class="r-empty">No names found.</div>';}
 function filterNames(){renderNames();}
-$('outPdf').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;pst('Loading output PDF…','scan');const buf=await file.arrayBuffer();try{S.outPdf=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;S.outName=file.name;const pg=await S.outPdf.getPage(1);const vp=pg.getViewport({scale:1});S.outW=vp.width;S.outH=vp.height;await renderOut(1);$('emptyMsg').style.display='none';ci.style.display='';$('hud').style.display='flex';$('hudF').textContent=file.name;$('hudZ').textContent=Math.round(S.outScale*100)+'%';S.isDrawing=true;$('finBtn').disabled=false;$('clrBtn').disabled=false;checkBothLoaded();updateScalePill();pst(`✓ ${file.name} loaded — click ⚡ Detect`,'on');setStep(S.areaNames.length?3:2);}catch(err){pst('Error: '+(err.message||err));}});
+$('outPdf').addEventListener('change', async e => {
+  const input = e.currentTarget;
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const loadId = ++outPdfLoadId;
+  pst('Loading output PDF…', 'scan');
+  let pdf;
+  let outW, outH, outScale;
+  try {
+    pdf = await loadPdfFile(file);
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({scale:1});
+    outW = viewport.width;
+    outH = viewport.height;
+    outScale = await renderOut(1, pdf, S.outScale);
+  } catch (err) {
+    if (loadId === outPdfLoadId) pst('Could not load output PDF: ' + (err.message || err));
+    if (pdf) await pdf.destroy().catch(cleanupErr => console.error('Failed to release output PDF:', cleanupErr));
+    if (loadId === outPdfLoadId && S.outPdf) {
+      try { await renderOut(1); redraw(); }
+      catch (restoreErr) { console.error('Failed to restore previous output PDF preview:', restoreErr); }
+    }
+    return;
+  }
+  if (loadId !== outPdfLoadId) {
+    await pdf.destroy().catch(cleanupErr => console.error('Failed to release superseded output PDF:', cleanupErr));
+    return;
+  }
+  const oldPdf = S.outPdf;
+  S.outPdf = pdf;
+  S.outName = file.name;
+  S.outW = outW;
+  S.outH = outH;
+  S.outScale = outScale;
+  $('emptyMsg').style.display='none';
+  ci.style.display='';
+  $('hud').style.display='flex';
+  $('hudF').textContent=file.name;
+  $('hudZ').textContent=Math.round(S.outScale*100)+'%';
+  S.isDrawing=true;
+  $('finBtn').disabled=false;
+  $('clrBtn').disabled=false;
+  checkBothLoaded();
+  updateScalePill();
+  redraw();
+  pst('✓ ' + file.name + ' loaded — click ⚡ Detect', 'on');
+  setStep(S.areaNames.length ? 3 : 2);
+  if (oldPdf) oldPdf.destroy().catch(cleanupErr => console.error('Failed to release replaced output PDF:', cleanupErr));
+});
 function checkBothLoaded(){if(S.inPdf&&S.outPdf){$('detectBtn').disabled=false;updateScalePill();}}
 function updateScalePill(){if(!S.inW||!S.outW)return;const mismatch=Math.abs(S.inW-S.outW)>2||Math.abs(S.inH-S.outH)>2;const pill=$('scalePill');pill.className='scale-pill'+(mismatch?' show':'');if(mismatch){pill.textContent=`⚠ Size mismatch: Input ${Math.round(S.inW)}×${Math.round(S.inH)}pt vs Output ${Math.round(S.outW)}×${Math.round(S.outH)}pt — using relative-position matching`;}}
-async function renderOut(p){if(!S.outPdf)return;const page=await S.outPdf.getPage(p);const vp=page.getViewport({scale:S.outScale});const w=Math.round(vp.width),h=Math.round(vp.height);pc.width=w;pc.height=h;pc.style.width=w+'px';pc.style.height=h+'px';dc.width=w;dc.height=h;dc.style.width=w+'px';dc.style.height=h+'px';pctx.clearRect(0,0,w,h);await page.render({canvasContext:pctx,viewport:vp}).promise;}
-async function zoom(s){s=clamp(+s.toFixed(4),.3,5);if(Math.abs(s-S.outScale)<1e-5)return;S.outScale=s;if(S.outPdf){await renderOut(1);redraw();$('hudZ').textContent=Math.round(s*100)+'%';}}
+async function renderOut(p, pdf = S.outPdf, requestedScale = S.outScale) {
+  if (!pdf) return requestedScale;
+  const page = await pdf.getPage(p);
+  const baseViewport = page.getViewport({scale:1});
+  const maxPixels = 4_000_000, maxDimension = 8192;
+  const scale = Math.min(requestedScale, maxDimension/baseViewport.width, maxDimension/baseViewport.height, Math.sqrt(maxPixels/(baseViewport.width*baseViewport.height)));
+  const viewport = page.getViewport({scale});
+  const width = Math.round(viewport.width), height = Math.round(viewport.height);
+  pc.width=width; pc.height=height; pc.style.width=width+'px'; pc.style.height=height+'px';
+  dc.width=width; dc.height=height; dc.style.width=width+'px'; dc.style.height=height+'px';
+  pctx.clearRect(0,0,width,height);
+  await page.render({canvasContext:pctx,viewport}).promise;
+  return scale;
+}
+async function zoom(s) {
+  s=clamp(+s.toFixed(4),.3,5);
+  if(Math.abs(s-S.outScale)<1e-5)return;
+  if(S.outPdf){
+    S.outScale=await renderOut(1,S.outPdf,s);
+    redraw();
+    $('hudZ').textContent=Math.round(S.outScale*100)+'%';
+  }
+}
 $('ziBtn').addEventListener('click',()=>zoom(S.outScale*1.25));
 $('zoBtn').addEventListener('click',()=>zoom(S.outScale/1.25));
 $('fitBtn').addEventListener('click',async()=>{if(!S.outPdf)return;const pg=await S.outPdf.getPage(1);const vp=pg.getViewport({scale:1});await zoom((cw.clientWidth-30)/vp.width);});
@@ -404,7 +602,7 @@ window.finishEdit=finishEdit;window.cancelEditBar=cancelEditBar;window.editR=edi
 window.delRoom=delRoom;window.hlRoom=hlRoom;window.updP=updP;window.delP=delP;window.addP=addP;
 window.commitM=commitM;window.metaK=metaK;
 const csvCell=v=>{const s=String(v??'');if(/[",\n\r]/.test(s))return '"'+s.replace(/"/g,'""')+'"';return s;};
-$('expBtn').addEventListener('click',()=>{if(!S.rooms.length){alert('No zones.');return;}const maxC=Math.max(...S.rooms.map(r=>r.points.length));let csv='processor_id,root_area,root_subarea,root_sub_subarea,code,name';for(let i=0;i<maxC;i++)csv+=',';csv+='\n';S.rooms.forEach((r,idx)=>{const pid=r.metadata?.processorId||'1';const ra=r.metadata?.rootArea||'AMAZON 8F';const rs=r.metadata?.rootSubarea||'Floor 8';const rss=r.metadata?.rootSubSubarea||'';csv+=`${csvCell(pid)},${csvCell(ra)},${csvCell(rs)},${csvCell(rss)},${csvCell(r.code||(800+idx))},${csvCell(r.name)}`;r.points.forEach(pt=>csv+=`,${pt.x}~${pt.y}`);for(let i=0;i<maxC-r.points.length;i++)csv+=',';csv+='\n';});const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='floor_plan_zones.csv';a.click();URL.revokeObjectURL(url);pst(`✓ Exported ${S.rooms.length} zones`,'on');setStep(4);});
+$('expBtn').addEventListener('click',()=>{if(!S.rooms.length){alert('No zones.');return;}const maxC=Math.max(...S.rooms.map(r=>r.points.length));let csv='processor_id,root_area,root_subarea,root_sub_subarea,code,name';for(let i=0;i<maxC;i++)csv+=',';csv+='\n';S.rooms.forEach((r,idx)=>{const pid=r.metadata?.processorId||'1';const ra=r.metadata?.rootArea||'AMAZON 8F';const rs=r.metadata?.rootSubarea||'Floor 8';const rss=r.metadata?.rootSubSubarea||'';csv+=`${csvCell(pid)},${csvCell(ra)},${csvCell(rs)},${csvCell(rss)},${csvCell(r.code||(800+idx))},${csvCell(r.name)}`;r.points.forEach(pt=>csv+=`,${pt.x}~${pt.y}`);for(let i=0;i<maxC-r.points.length;i++)csv+=',';csv+='\n';});const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='floor_plan_zones.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);pst(`✓ Exported ${S.rooms.length} zones`,'on');setStep(4);});
 </script>
 </body>
 </html>
